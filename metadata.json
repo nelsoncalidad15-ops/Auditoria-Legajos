@@ -1,0 +1,6 @@
+{
+  "name": "Audit Legajos Pro",
+  "description": "Aplicación para auditoría de legajos con generación de reportes PDF e integración con Google Sheets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
