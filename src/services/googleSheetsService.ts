@@ -4,6 +4,11 @@ const WEB_APP_URL = import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL?.trim() || '';
 
 export const hasGoogleSheetsConfig = Boolean(WEB_APP_URL);
 
+const createResourceUrl = (resource: string) => {
+  const separator = WEB_APP_URL.includes('?') ? '&' : '?';
+  return `${WEB_APP_URL}${separator}resource=${resource}&t=${Date.now()}`;
+};
+
 const normalizeItemsForCompare = (items: AuditItem[]) =>
   items.map((item) => ({
     id: Number(item.id),
@@ -100,14 +105,37 @@ export const saveSessionsSnapshot = async (sessions: AuditSession[]) => {
   }
 };
 
+const fetchWebAppJson = async (resource: string) => {
+  const response = await fetch(createResourceUrl(resource), {
+    method: 'GET',
+    cache: 'no-store',
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`WEB_APP_HTTP_${response.status}`);
+  }
+
+  const rawText = await response.text();
+  if (!rawText.trim()) {
+    throw new Error(`WEB_APP_EMPTY_${resource.toUpperCase()}`);
+  }
+
+  try {
+    return JSON.parse(rawText);
+  } catch (error) {
+    console.error(`Invalid JSON for resource ${resource}:`, rawText);
+    throw new Error(`WEB_APP_INVALID_JSON_${resource.toUpperCase()}`);
+  }
+};
+
 export const loadQuestionsConfig = async () => {
   if (!WEB_APP_URL) return null;
 
   try {
-    const response = await fetch(`${WEB_APP_URL}?resource=questions`, { method: 'GET' });
-    if (!response.ok) return null;
-
-    const data = await response.json();
+    const data = await fetchWebAppJson('questions');
     if (!Array.isArray(data?.items)) return null;
 
     return data.items as AuditItem[];
@@ -121,10 +149,7 @@ export const loadSessionsSnapshot = async () => {
   if (!WEB_APP_URL) return null;
 
   try {
-    const response = await fetch(`${WEB_APP_URL}?resource=sessions`, { method: 'GET' });
-    if (!response.ok) return null;
-
-    const data = await response.json();
+    const data = await fetchWebAppJson('sessions');
     if (!Array.isArray(data?.sessions)) return null;
 
     return data.sessions as AuditSession[];

@@ -91,6 +91,7 @@ export default function App() {
   const [isSavingQuestions, setIsSavingQuestions] = useState(false);
   const [isSyncingSessions, setIsSyncingSessions] = useState(false);
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
+  const [syncMessage, setSyncMessage] = useState('');
   const [newSession, setNewSession] = useState({
     nombre: '',
     auditor: '',
@@ -104,9 +105,7 @@ export default function App() {
     roles: [] as string[],
   });
 
-  React.useEffect(() => {
-    let localSessionsSnapshot: AuditSession[] = [];
-
+  const hydrateSharedData = React.useCallback((localSessionsSnapshot: AuditSession[] = []) => {
     const savedItems = localStorage.getItem(ITEMS_STORAGE_KEY);
     if (savedItems) {
       try {
@@ -133,7 +132,10 @@ export default function App() {
       if (remoteItems && remoteItems.length > 0) {
         setItems(remoteItems);
         localStorage.setItem(ITEMS_STORAGE_KEY, JSON.stringify(remoteItems));
+        return;
       }
+
+      setSyncMessage((current) => current || 'Sincronizacion activa, pero la configuracion remota de preguntas esta vacia.');
     });
 
     loadSessionsSnapshot().then((remoteSessions) => {
@@ -142,6 +144,7 @@ export default function App() {
         setSessions(sorted);
         setSelectedSessionId(pickInitialSessionId(sorted));
         localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sorted));
+        setSyncMessage('');
         return;
       }
 
@@ -149,10 +152,26 @@ export default function App() {
         saveSessionsSnapshot(sortSessionsByUpdatedAt(localSessionsSnapshot)).catch((error) => {
           console.error(error);
         });
+        setSyncMessage('No se encontro un snapshot remoto; se mantuvo el avance local de esta computadora.');
+        return;
       }
+
+      setSyncMessage('La conexion con Google Sheets responde, pero no devolvio sesiones compartidas para mostrar.');
+    }).catch((error) => {
+      console.error(error);
+      setSyncMessage('No se pudieron leer las sesiones compartidas desde Google Sheets.');
     });
 
-    testConnection().then(setIsOnline);
+    testConnection().then((status) => {
+      setIsOnline(status);
+      if (!status) {
+        setSyncMessage('No se pudo validar la sincronizacion con Google Sheets.');
+      }
+    });
+  }, []);
+
+  React.useEffect(() => {
+    hydrateSharedData();
   }, []);
 
   const persistSessions = (nextSessions: AuditSession[]) => {
@@ -939,6 +958,25 @@ export default function App() {
       <main className="max-w-6xl mx-auto px-3 sm:px-4 pt-40 sm:pt-44 space-y-6">
         {mainTab === 'auditorias' ? (
           <>
+            {syncMessage && (
+              <section className="max-w-6xl mx-auto">
+                <div className="rounded-[24px] border border-amber-200 bg-amber-50/90 px-4 py-4 text-sm text-amber-900 shadow-[0_10px_30px_rgba(217,119,6,0.08)]">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <p className="font-semibold">{syncMessage}</p>
+                    <button
+                      onClick={() => {
+                        setSyncMessage('');
+                        hydrateSharedData();
+                      }}
+                      className="rounded-2xl border border-amber-300 bg-white px-4 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-amber-900"
+                    >
+                      Reintentar sincronizacion
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
+
             {!selectedSession ? (
               <>
                 <section className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-4">
