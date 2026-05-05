@@ -125,7 +125,7 @@ export default function App() {
         localSessionsSnapshot = parsed;
         const sorted = sortSessionsByUpdatedAt(parsed);
         setSessions(sorted);
-        setSelectedSessionId(pickInitialSessionId(sorted));
+        setSelectedSessionId(null);
       } catch (error) {
         console.error(error);
       }
@@ -145,7 +145,7 @@ export default function App() {
       if (remoteSessions && remoteSessions.length > 0) {
         const sorted = sortSessionsByUpdatedAt(remoteSessions);
         setSessions(sorted);
-        setSelectedSessionId(pickInitialSessionId(sorted));
+        setSelectedSessionId(null);
         localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sorted));
         setSyncMessage('');
         return;
@@ -207,6 +207,8 @@ export default function App() {
     () => sessions.find((session) => session.id === selectedSessionId) ?? null,
     [sessions, selectedSessionId],
   );
+
+  const featuredSession = useMemo(() => sessions[0] ?? null, [sessions]);
 
   const selectedLegajo = useMemo(
     () => selectedSession?.legajos.find((legajo) => legajo.id === selectedLegajoId) ?? null,
@@ -303,6 +305,24 @@ export default function App() {
 
     return stats;
   }, [sessions, items]);
+
+  const featuredSessionSummary = useMemo(() => {
+    if (!featuredSession) return null;
+
+    const finalizados = featuredSession.legajos.filter((legajo) => legajo.status === 'finalizado').length;
+    const enProceso = featuredSession.legajos.filter((legajo) => legajo.status === 'en_proceso').length;
+    const total = featuredSession.legajos.length;
+    const average = total > 0
+      ? featuredSession.legajos.reduce((acc, legajo) => acc + calculateSummary(legajo.scores, items).total, 0) / total
+      : 0;
+
+    return {
+      finalizados,
+      enProceso,
+      total,
+      average,
+    };
+  }, [featuredSession, items]);
 
   const totalAudited = branchStats.Jujuy.count + branchStats.Salta.count;
 
@@ -683,7 +703,7 @@ export default function App() {
       doc.setTextColor(...palette.ink);
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
-      doc.text('6. Anexo de evidencias', 14, sectionY);
+      doc.text('7. Anexo de evidencias', 14, sectionY);
 
       if (evidenceEntries.length === 0) {
         doc.setTextColor(...palette.text);
@@ -761,6 +781,61 @@ export default function App() {
       });
     };
 
+    const drawLegajoMatrixSection = () => {
+      const matrixStartY = ensureSpace(92, '6. Matriz resumida por legajo');
+      const matrixHead = ['Legajo', ...items.map((item) => `${item.id}`)];
+      const matrixBody = sessionLegajosWithSummary.map((legajo) => [
+        legajo.nombre,
+        ...items.map((item) => {
+          const score = legajo.scores[item.id];
+          if (score === 1) return 'SI';
+          if (score === 0) return 'NO';
+          return '-';
+        }),
+      ]);
+
+      autoTable(doc, {
+        startY: matrixStartY + 4,
+        head: [matrixHead],
+        body: matrixBody,
+        headStyles: {
+          fillColor: palette.ink,
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 7,
+          halign: 'center',
+        },
+        alternateRowStyles: { fillColor: palette.paper },
+        margin: { left: 10, right: 10 },
+        styles: {
+          fontSize: 6.6,
+          cellPadding: 2,
+          textColor: palette.text,
+          lineColor: palette.border,
+          lineWidth: 0.15,
+          halign: 'center',
+        },
+        columnStyles: {
+          0: { cellWidth: 34, halign: 'left', fontStyle: 'bold' },
+          ...Object.fromEntries(items.map((_, index) => [index + 1, { cellWidth: 7.6 }])),
+        },
+        didParseCell: (data) => {
+          if (data.section !== 'body' || data.column.index === 0) return;
+
+          const value = String(data.cell.raw || '');
+          if (value === 'SI') {
+            data.cell.styles.textColor = palette.teal;
+            data.cell.styles.fontStyle = 'bold';
+          } else if (value === 'NO') {
+            data.cell.styles.textColor = palette.rose;
+            data.cell.styles.fontStyle = 'bold';
+          } else {
+            data.cell.styles.textColor = palette.muted;
+          }
+        },
+      });
+    };
+
     const ensureSpace = (requiredHeight: number, nextSectionTitle: string) => {
       const probeY = (doc.lastAutoTable?.finalY || 0) + 10;
       if (probeY + requiredHeight <= pageHeight - 20) {
@@ -813,7 +888,7 @@ export default function App() {
     doc.setTextColor(...lotTone.color);
     doc.text(`Estado ${lotTone.label}`, pageWidth - 48, 29);
 
-    drawRoundedPanel(14, 48, pageWidth - 28, 26, palette.panel, palette.border);
+    drawRoundedPanel(14, 48, pageWidth - 28, 32, palette.panel, palette.border);
     doc.setTextColor(...palette.muted);
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
@@ -822,14 +897,14 @@ export default function App() {
     doc.text('OBJETIVO', 128, 56);
     doc.text('FECHA', 168, 56);
     doc.setTextColor(...palette.ink);
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
-    doc.text(selectedSession.nombre, 20, 66);
+    doc.text(doc.splitTextToSize(selectedSession.nombre, 48), 20, 64);
     doc.text(selectedSession.sucursal, 74, 66);
     doc.text(`${selectedSession.objetivo}`, 128, 66);
     doc.text(formatDate(selectedSession.updatedAt), 168, 66);
 
-    const cardY = 81;
+    const cardY = 87;
     const cardGap = 4;
     const cardWidth = (pageWidth - 28 - cardGap * 3) / 4;
     drawStatCard(14, cardY, cardWidth, 31, 'General', `${sessionAggregateSummary.total.toFixed(1)}%`, 'Vision total del lote', palette.gold);
@@ -837,11 +912,11 @@ export default function App() {
     drawStatCard(14 + (cardWidth + cardGap) * 2, cardY, cardWidth, 31, 'Pre-entrega', `${sessionAggregateSummary.preEntrega.toFixed(1)}%`, 'Entrega y preparacion', palette.teal);
     drawStatCard(14 + (cardWidth + cardGap) * 3, cardY, cardWidth, 31, 'Ventas', `${sessionAggregateSummary.ventas.toFixed(1)}%`, 'Proceso comercial', palette.blue);
 
-    drawRoundedPanel(14, 118, pageWidth - 28, 36, palette.panel, palette.border);
+    drawRoundedPanel(14, 124, pageWidth - 28, 36, palette.panel, palette.border);
     doc.setTextColor(...palette.ink);
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
-    doc.text('1. Lectura ejecutiva', 18, 129);
+    doc.text('1. Lectura ejecutiva', 18, 135);
     doc.setTextColor(...palette.text);
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
@@ -852,13 +927,13 @@ export default function App() {
       attentionLegajo ? `El principal foco de seguimiento es ${attentionLegajo.nombre} con ${attentionLegajo.summary.total.toFixed(0)}% de cumplimiento.` : 'Aun no se detecta un foco de seguimiento prioritario.',
       totalComentarios > 0 ? `Se registran ${totalComentarios} punto(s) con observaciones o evidencia complementaria.` : 'No se registran observaciones complementarias relevantes.',
     ].join(' ');
-    doc.text(doc.splitTextToSize(executiveNarrative, pageWidth - 38), 18, 138);
+    doc.text(doc.splitTextToSize(executiveNarrative, pageWidth - 38), 18, 144);
 
-    drawRoundedPanel(14, 161, pageWidth - 28, 42, palette.panel, palette.border);
+    drawRoundedPanel(14, 167, pageWidth - 28, 42, palette.panel, palette.border);
     doc.setTextColor(...palette.ink);
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
-    doc.text('2. Panorama de cumplimiento', 18, 171);
+    doc.text('2. Panorama de cumplimiento', 18, 177);
 
     [
       { label: 'General', value: sessionAggregateSummary.total, color: palette.ink, deviations: totalDesvios },
@@ -866,7 +941,7 @@ export default function App() {
       { label: 'Pre-entrega', value: sessionAggregateSummary.preEntrega, color: palette.teal, deviations: preEntregaDeviationCount },
       { label: 'Ventas', value: sessionAggregateSummary.ventas, color: palette.blue, deviations: ventasDeviationCount },
     ].forEach((row, index) => {
-      const rowY = 180 + index * 7;
+      const rowY = 186 + index * 7;
       doc.setTextColor(...palette.text);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
@@ -885,10 +960,10 @@ export default function App() {
     doc.setTextColor(...palette.ink);
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
-    doc.text('3. Hallazgos generales mas repetidos', 14, 217);
+    doc.text('3. Hallazgos generales mas repetidos', 14, 223);
 
     autoTable(doc, {
-      startY: 221,
+      startY: 227,
       head: [['Hallazgo', 'Repeticiones']],
       body: topDeviationRows.length > 0
         ? topDeviationRows.map(([hallazgo, cantidad]) => [hallazgo, `${cantidad}`])
@@ -1007,16 +1082,19 @@ export default function App() {
       },
     });
 
+    drawLegajoMatrixSection();
     drawEvidenceSection();
 
     const pageCount = doc.getNumberOfPages();
     for (let i = 1; i <= pageCount; i += 1) {
       doc.setPage(i);
+      const currentPageWidth = doc.internal.pageSize.getWidth();
+      const currentPageHeight = doc.internal.pageSize.getHeight();
       doc.setDrawColor(...palette.border);
-      doc.line(14, pageHeight - 16, pageWidth - 14, pageHeight - 16);
+      doc.line(14, currentPageHeight - 16, currentPageWidth - 14, currentPageHeight - 16);
       doc.setTextColor(...palette.muted);
       doc.setFontSize(8);
-      doc.text(`AuditPro | Reporte ejecutivo | Pagina ${i} de ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+      doc.text(`AuditPro | Reporte ejecutivo | Pagina ${i} de ${pageCount}`, currentPageWidth / 2, currentPageHeight - 10, { align: 'center' });
     }
 
     doc.save(`Auditoria_Lote_${selectedSession.sucursal}_${selectedSession.nombre}_${Date.now()}.pdf`);
@@ -1124,15 +1202,19 @@ export default function App() {
             {!selectedSession ? (
               <>
                 <section className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-4">
-                  <div className="rounded-[30px] border border-white/70 bg-white/70 backdrop-blur-xl shadow-[0_22px_50px_rgba(148,163,184,0.18)] p-6">
+                  <div className="rounded-[34px] border border-white/70 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.98),_rgba(248,250,252,0.9)_48%,_rgba(226,232,240,0.78)_100%)] backdrop-blur-xl shadow-[0_26px_60px_rgba(148,163,184,0.18)] p-6 sm:p-7">
                     <div className="flex items-center gap-2">
                       <Sparkles size={14} className="text-slate-700" />
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.22em]">Inicio</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.24em]">Panel principal</p>
                     </div>
-                    <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-900">Trabajá por lote de legajos</h2>
-                    <p className="mt-3 text-sm leading-relaxed text-slate-500 max-w-2xl">
-                      Armá una auditoría, cargá 10 o 20 legajos, avanzá en distintos momentos y retomá exactamente donde la dejaste.
-                    </p>
+                    <div className="mt-4 max-w-2xl">
+                      <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 leading-[1.02]">
+                        Entrá, ubicá tu lote y seguí auditando sin perder el hilo.
+                      </h2>
+                      <p className="mt-4 text-sm sm:text-[15px] leading-relaxed text-slate-500">
+                        Me gusta más que el ingreso siempre sea una portada clara: ver el estado general, arrancar una auditoría nueva o continuar la correcta cuando vos lo decidís.
+                      </p>
+                    </div>
                     <div className="mt-6 flex flex-wrap gap-3">
                       <button
                         onClick={() => setShowCreateSession((prev) => !prev)}
@@ -1140,15 +1222,57 @@ export default function App() {
                       >
                         Nueva auditoria
                       </button>
-                      {sessions.length > 0 && (
+                      {featuredSession && (
                         <button
-                          onClick={() => setSelectedSessionId(sessions[0].id)}
+                          onClick={() => setSelectedSessionId(featuredSession.id)}
                           className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-black text-slate-700"
                         >
-                          Continuar auditoria
+                          Continuar ultima auditoria
                         </button>
                       )}
                     </div>
+
+                    {featuredSession && featuredSessionSummary && (
+                      <div className="mt-7 rounded-[28px] border border-white/80 bg-white/84 shadow-[0_18px_45px_rgba(148,163,184,0.12)] p-5">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Ultima auditoria</p>
+                            <h3 className="mt-2 text-2xl font-black text-slate-900 break-words">{featuredSession.nombre}</h3>
+                            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2">{featuredSession.sucursal}</span>
+                              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2">{featuredSession.auditor}</span>
+                              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2">{new Date(featuredSession.updatedAt).toLocaleDateString('es-AR')}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => setSelectedSessionId(featuredSession.id)}
+                            className="rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-lg shadow-slate-900/20"
+                          >
+                            Abrir lote
+                          </button>
+                        </div>
+
+                        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                          <div className="rounded-[22px] border border-slate-200 bg-slate-50/85 p-4">
+                            <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Legajos</p>
+                            <p className="mt-2 text-2xl font-black text-slate-900">{featuredSessionSummary.total}</p>
+                          </div>
+                          <div className="rounded-[22px] border border-slate-200 bg-slate-50/85 p-4">
+                            <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Finalizados</p>
+                            <p className="mt-2 text-2xl font-black text-emerald-600">{featuredSessionSummary.finalizados}</p>
+                          </div>
+                          <div className="rounded-[22px] border border-slate-200 bg-slate-50/85 p-4">
+                            <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">En proceso</p>
+                            <p className="mt-2 text-2xl font-black text-sky-600">{featuredSessionSummary.enProceso}</p>
+                          </div>
+                          <div className="rounded-[22px] border border-slate-200 bg-slate-50/85 p-4">
+                            <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Promedio</p>
+                            <p className="mt-2 text-2xl font-black text-slate-900">{featuredSessionSummary.average.toFixed(0)}%</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="rounded-[30px] border border-white/70 bg-slate-900 text-white shadow-[0_24px_60px_rgba(15,23,42,0.24)] p-6">
