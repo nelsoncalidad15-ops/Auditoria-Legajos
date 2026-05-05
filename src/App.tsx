@@ -81,6 +81,7 @@ const isCompactMobileViewport = () =>
   typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
 
 export default function App() {
+  const createSessionRef = React.useRef<HTMLElement | null>(null);
   const [mainTab, setMainTab] = useState<MainTab>('auditorias');
   const [items, setItems] = useState<AuditItem[]>(AUDIT_ITEMS);
   const [sessions, setSessions] = useState<AuditSession[]>([]);
@@ -108,7 +109,8 @@ export default function App() {
     roles: [] as string[],
   });
 
-  const hydrateSharedData = React.useCallback((localSessionsSnapshot: AuditSession[] = []) => {
+  const hydrateSharedData = React.useCallback(() => {
+    let localSessionsSnapshot: AuditSession[] = [];
     const savedItems = localStorage.getItem(ITEMS_STORAGE_KEY);
     if (savedItems) {
       try {
@@ -151,11 +153,15 @@ export default function App() {
         return;
       }
 
-      if (hasGoogleSheetsConfig && localSessionsSnapshot.length > 0) {
-        saveSessionsSnapshot(sortSessionsByUpdatedAt(localSessionsSnapshot)).catch((error) => {
-          console.error(error);
-        });
-        setSyncMessage('No se encontro un snapshot remoto; se mantuvo el avance local de esta computadora.');
+      if (hasGoogleSheetsConfig) {
+        setSessions([]);
+        setSelectedSessionId(null);
+        setSyncMessage('Google Sheets no devolvio auditorias compartidas. No se restauraron datos locales automaticamente.');
+        return;
+      }
+
+      if (localSessionsSnapshot.length > 0) {
+        setSyncMessage('Sin sincronizacion remota. Se muestran solo auditorias guardadas en este dispositivo.');
         return;
       }
 
@@ -176,6 +182,14 @@ export default function App() {
   React.useEffect(() => {
     hydrateSharedData();
   }, []);
+
+  React.useEffect(() => {
+    if (!showCreateSession || !isCompactMobileViewport()) return;
+
+    window.setTimeout(() => {
+      createSessionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 180);
+  }, [showCreateSession]);
 
   const persistSessions = (nextSessions: AuditSession[]) => {
     const sorted = sortSessionsByUpdatedAt(nextSessions);
@@ -782,7 +796,15 @@ export default function App() {
     };
 
     const drawLegajoMatrixSection = () => {
-      const matrixStartY = ensureSpace(92, '6. Matriz resumida por legajo');
+      const matrixStartY = ensureSpace(112, '6. Matriz resumida por legajo');
+      const matrixLegend = items.map((item) => `${item.id} = ${item.requisito}`).join(' | ');
+
+      doc.setTextColor(...palette.text);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Lectura rapida: SI = cumple, NO = desvio, - = sin responder.', 14, matrixStartY + 8);
+      doc.text(doc.splitTextToSize(matrixLegend, pageWidth - 28), 14, matrixStartY + 15);
+
       const matrixHead = ['Legajo', ...items.map((item) => `${item.id}`)];
       const matrixBody = sessionLegajosWithSummary.map((legajo) => [
         legajo.nombre,
@@ -795,7 +817,7 @@ export default function App() {
       ]);
 
       autoTable(doc, {
-        startY: matrixStartY + 4,
+        startY: matrixStartY + 34,
         head: [matrixHead],
         body: matrixBody,
         headStyles: {
@@ -1208,37 +1230,47 @@ export default function App() {
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.24em]">Panel principal</p>
                     </div>
                     <div className="mt-4 max-w-2xl">
-                      <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 leading-[1.02]">
+                      <h2 className="text-[30px] sm:text-4xl font-black tracking-tight text-slate-900 leading-[1.02]">
                         Entrá, ubicá tu lote y seguí auditando sin perder el hilo.
                       </h2>
-                      <p className="mt-4 text-sm sm:text-[15px] leading-relaxed text-slate-500">
+                      <p className="mt-3 text-[13px] sm:text-[15px] leading-relaxed text-slate-500 max-w-xl">
                         Me gusta más que el ingreso siempre sea una portada clara: ver el estado general, arrancar una auditoría nueva o continuar la correcta cuando vos lo decidís.
                       </p>
                     </div>
-                    <div className="mt-6 flex flex-wrap gap-3">
+                    <div className="mt-5 flex flex-col sm:flex-row sm:flex-wrap gap-3">
                       <button
                         onClick={() => setShowCreateSession((prev) => !prev)}
-                        className="rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-xl shadow-slate-900/20"
+                        className="w-full sm:w-auto rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-xl shadow-slate-900/20"
                       >
                         Nueva auditoria
                       </button>
                       {featuredSession && (
                         <button
                           onClick={() => setSelectedSessionId(featuredSession.id)}
-                          className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-black text-slate-700"
+                          className="w-full sm:w-auto rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-black text-slate-700"
                         >
                           Continuar ultima auditoria
                         </button>
                       )}
                     </div>
 
+                    <div className="mt-5 grid grid-cols-2 gap-3 md:hidden">
+                      {(['Jujuy', 'Salta'] as BranchName[]).map((branch) => (
+                        <div key={branch} className="rounded-[20px] border border-slate-200/80 bg-white/70 p-4">
+                          <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">{branch}</p>
+                          <p className="mt-2 text-2xl font-black text-slate-900">{branchStats[branch].count}</p>
+                          <p className="mt-1 text-[11px] text-slate-500">{branchStats[branch].average.toFixed(0)}% promedio</p>
+                        </div>
+                      ))}
+                    </div>
+
                     {featuredSession && featuredSessionSummary && (
-                      <div className="mt-7 rounded-[28px] border border-white/80 bg-white/84 shadow-[0_18px_45px_rgba(148,163,184,0.12)] p-5">
+                      <div className="mt-6 rounded-[26px] border border-white/80 bg-white/84 shadow-[0_18px_45px_rgba(148,163,184,0.12)] p-4 sm:p-5">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                           <div className="min-w-0">
                             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Ultima auditoria</p>
-                            <h3 className="mt-2 text-2xl font-black text-slate-900 break-words">{featuredSession.nombre}</h3>
-                            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                            <h3 className="mt-2 text-xl sm:text-2xl font-black text-slate-900 break-words">{featuredSession.nombre}</h3>
+                            <div className="mt-3 flex flex-wrap gap-2 text-[10px] sm:text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
                               <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2">{featuredSession.sucursal}</span>
                               <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2">{featuredSession.auditor}</span>
                               <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2">{new Date(featuredSession.updatedAt).toLocaleDateString('es-AR')}</span>
@@ -1247,13 +1279,13 @@ export default function App() {
 
                           <button
                             onClick={() => setSelectedSessionId(featuredSession.id)}
-                            className="rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-lg shadow-slate-900/20"
+                            className="w-full sm:w-auto rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-lg shadow-slate-900/20"
                           >
                             Abrir lote
                           </button>
                         </div>
 
-                        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                           <div className="rounded-[22px] border border-slate-200 bg-slate-50/85 p-4">
                             <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Legajos</p>
                             <p className="mt-2 text-2xl font-black text-slate-900">{featuredSessionSummary.total}</p>
@@ -1275,7 +1307,7 @@ export default function App() {
                     )}
                   </div>
 
-                  <div className="rounded-[30px] border border-white/70 bg-slate-900 text-white shadow-[0_24px_60px_rgba(15,23,42,0.24)] p-6">
+                  <div className="hidden md:block rounded-[30px] border border-white/70 bg-slate-900 text-white shadow-[0_24px_60px_rgba(15,23,42,0.24)] p-6">
                     <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Resumen</p>
                     <div className="mt-5 grid grid-cols-2 gap-3">
                       {(['Jujuy', 'Salta'] as BranchName[]).map((branch) => (
@@ -1295,6 +1327,7 @@ export default function App() {
                 <AnimatePresence>
                   {showCreateSession && (
                     <motion.section
+                      ref={createSessionRef}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
