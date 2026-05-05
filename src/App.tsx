@@ -77,6 +77,9 @@ const sortSessionsByUpdatedAt = (sessions: AuditSession[]) =>
 const pickInitialSessionId = (sessions: AuditSession[]) =>
   sortSessionsByUpdatedAt(sessions).find((session) => session.status === 'en_curso')?.id ?? null;
 
+const isCompactMobileViewport = () =>
+  typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+
 export default function App() {
   const [mainTab, setMainTab] = useState<MainTab>('auditorias');
   const [items, setItems] = useState<AuditItem[]>(AUDIT_ITEMS);
@@ -385,6 +388,21 @@ export default function App() {
     persistSessions(nextSessions);
   };
 
+  const moveToNextAuditItem = (currentItemId: number) => {
+    if (!isCompactMobileViewport()) return;
+
+    const currentIndex = items.findIndex((item) => item.id === currentItemId);
+    if (currentIndex < 0) return;
+
+    const nextItem = items[currentIndex + 1];
+    if (!nextItem) return;
+
+    window.setTimeout(() => {
+      const nextElement = document.getElementById(`audit-item-${nextItem.id}`);
+      nextElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 180);
+  };
+
   const createSession = () => {
     if (!newSession.nombre.trim() || !newSession.auditor.trim()) return;
 
@@ -555,6 +573,31 @@ export default function App() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 6);
 
+    const evidenceEntries = sessionLegajosWithSummary.flatMap((legajo) => {
+      const itemEvidenceEntries = items.flatMap((item) => {
+        const detail = legajo.itemDetails[item.id];
+        const evidencias = detail?.evidencias || [];
+
+        return evidencias.map((src, evidenceIndex) => ({
+          legajo: legajo.nombre,
+          requisito: item.requisito,
+          comentario: detail?.comentario?.trim() || '',
+          src,
+          evidenceIndex,
+        }));
+      });
+
+      const generalEvidenceEntries = (legajo.evidencias || []).map((src, evidenceIndex) => ({
+        legajo: legajo.nombre,
+        requisito: 'Evidencia general',
+        comentario: legajo.observaciones?.trim() || '',
+        src,
+        evidenceIndex,
+      }));
+
+      return [...itemEvidenceEntries, ...generalEvidenceEntries];
+    });
+
     const getPerformanceTone = (value: number) => {
       if (value >= 90) return { label: 'Solido', color: palette.teal };
       if (value >= 75) return { label: 'Controlado', color: palette.blue };
@@ -621,6 +664,101 @@ export default function App() {
       doc.setFontSize(7);
       doc.setFont('helvetica', 'normal');
       doc.text(helper, x + 10, y + 27);
+    };
+
+    const ensurePageSpace = (requiredHeight: number) => {
+      const currentY = (doc.lastAutoTable?.finalY || 0) + 10;
+      if (currentY + requiredHeight <= pageHeight - 20) {
+        return currentY;
+      }
+
+      doc.addPage();
+      doc.setFillColor(...palette.paper);
+      doc.rect(0, 0, pageWidth, pageHeight, 'F');
+      return 18;
+    };
+
+    const drawEvidenceSection = () => {
+      const sectionY = ensurePageSpace(90);
+      doc.setTextColor(...palette.ink);
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('6. Anexo de evidencias', 14, sectionY);
+
+      if (evidenceEntries.length === 0) {
+        doc.setTextColor(...palette.text);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.text('No se registraron fotos de evidencia en este lote.', 14, sectionY + 10);
+        return;
+      }
+
+      let cursorY = sectionY + 8;
+      const marginX = 14;
+      const gutter = 8;
+      const cardWidth = (pageWidth - marginX * 2 - gutter) / 2;
+      const imageHeight = 32;
+      const cardHeight = 62;
+
+      evidenceEntries.forEach((entry, index) => {
+        const column = index % 2;
+        if (column === 0 && cursorY + cardHeight > pageHeight - 22) {
+          doc.addPage();
+          doc.setFillColor(...palette.paper);
+          doc.rect(0, 0, pageWidth, pageHeight, 'F');
+          cursorY = 18;
+        }
+
+        const cardX = marginX + column * (cardWidth + gutter);
+        const cardY = cursorY;
+
+        drawRoundedPanel(cardX, cardY, cardWidth, cardHeight, palette.panel, palette.border);
+        doc.setTextColor(...palette.muted);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`ANEXO ${index + 1}`, cardX + 4, cardY + 6);
+
+        doc.setTextColor(...palette.ink);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.text(doc.splitTextToSize(`${entry.legajo} · ${entry.requisito}`, cardWidth - 8), cardX + 4, cardY + 12);
+
+        const imageY = cardY + 14;
+
+        try {
+          const format = entry.src.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+          (doc as unknown as { addImage: (...args: unknown[]) => void }).addImage(
+            entry.src,
+            format,
+            cardX + 4,
+            imageY,
+            cardWidth - 8,
+            imageHeight,
+            undefined,
+            'FAST',
+          );
+        } catch (error) {
+          console.error('Error embedding evidence image in PDF:', error);
+          doc.setDrawColor(...palette.border);
+          doc.rect(cardX + 4, imageY, cardWidth - 8, imageHeight);
+          doc.setTextColor(...palette.muted);
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          doc.text('No se pudo incrustar la imagen.', cardX + 8, imageY + 22);
+        }
+
+        if (entry.comentario) {
+          doc.setTextColor(...palette.text);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          const commentLines = doc.splitTextToSize(`Obs.: ${entry.comentario}`, cardWidth - 8).slice(0, 2);
+          doc.text(commentLines, cardX + 4, imageY + imageHeight + 8);
+        }
+
+        if (column === 1) {
+          cursorY += cardHeight + 8;
+        }
+      });
     };
 
     const ensureSpace = (requiredHeight: number, nextSectionTitle: string) => {
@@ -868,6 +1006,8 @@ export default function App() {
         1: { cellWidth: 148 },
       },
     });
+
+    drawEvidenceSection();
 
     const pageCount = doc.getNumberOfPages();
     for (let i = 1; i <= pageCount; i += 1) {
@@ -1289,14 +1429,15 @@ export default function App() {
                         item={item}
                         score={selectedLegajo.scores[item.id]}
                         detail={selectedLegajo.itemDetails[item.id] ?? createEmptyItemDetail()}
-                        onChange={(score) =>
+                        onChange={(score) => {
                           updateLegajo(selectedLegajo.id, (legajo) => ({
                             ...legajo,
                             status: 'en_proceso',
                             updatedAt: Date.now(),
                             scores: { ...legajo.scores, [item.id]: score },
-                          }))
-                        }
+                          }));
+                          moveToNextAuditItem(item.id);
+                        }}
                         onDetailChange={(detail) =>
                           updateLegajo(selectedLegajo.id, (legajo) => ({
                             ...legajo,
