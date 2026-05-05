@@ -22,16 +22,30 @@ const postToWebApp = async (payload: unknown) => {
     return { success: true, localOnly: true };
   }
 
-  await fetch(WEB_APP_URL, {
+  const response = await fetch(WEB_APP_URL, {
     method: 'POST',
-    mode: 'no-cors',
     headers: {
       'Content-Type': 'text/plain;charset=utf-8',
+      Accept: 'application/json',
     },
     body: JSON.stringify(payload),
   });
 
-  return { success: true };
+  if (!response.ok) {
+    throw new Error(`WEB_APP_POST_HTTP_${response.status}`);
+  }
+
+  const rawText = await response.text();
+  if (!rawText.trim()) {
+    return { success: true };
+  }
+
+  try {
+    return JSON.parse(rawText);
+  } catch (error) {
+    console.error('Invalid POST response from web app:', rawText);
+    throw new Error('WEB_APP_POST_INVALID_JSON');
+  }
 };
 
 export const testConnection = async () => {
@@ -92,13 +106,29 @@ export const saveQuestionsConfig = async (items: AuditItem[]) => {
 
 export const saveSessionsSnapshot = async (sessions: AuditSession[]) => {
   try {
-    return await postToWebApp({
+    const result = await postToWebApp({
       type: 'sessions_snapshot',
       payload: {
         updatedAt: Date.now(),
         sessions,
       },
     });
+
+    if (!WEB_APP_URL) {
+      return result;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 900));
+
+    const remoteSessions = await loadSessionsSnapshot();
+    const localSnapshot = JSON.stringify(sessions);
+    const remoteSnapshot = JSON.stringify(remoteSessions || []);
+
+    if (!remoteSessions || localSnapshot !== remoteSnapshot) {
+      throw new Error('SESSIONS_SNAPSHOT_NOT_PERSISTED');
+    }
+
+    return result;
   } catch (error) {
     console.error('Error saving sessions snapshot:', error);
     throw error;

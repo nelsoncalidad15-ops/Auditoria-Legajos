@@ -183,8 +183,12 @@ export default function App() {
 
     setIsSyncingSessions(true);
     saveSessionsSnapshot(sorted)
+      .then(() => {
+        setSyncMessage('');
+      })
       .catch((error) => {
         console.error(error);
+        setSyncMessage('No se pudo guardar el avance compartido en Google Sheets. El cambio quedo local en esta computadora.');
       })
       .finally(() => {
         setIsSyncingSessions(false);
