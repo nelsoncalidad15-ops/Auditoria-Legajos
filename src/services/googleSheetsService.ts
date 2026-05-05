@@ -1,29 +1,33 @@
-/**
- * GOOGLE APPS SCRIPT CODE (Paste this in Extensions > Apps Script in your Google Sheet)
- *
- * function doPost(e) {
- *   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
- *   var data = JSON.parse(e.postData.contents);
- *
- *   sheet.appendRow([
- *     new Date(),
- *     data.sucursal,
- *     data.legajoNombre,
- *     JSON.stringify(data.scores),
- *     data.observaciones,
- *     data.evidencias.length + " imagenes"
- *   ]);
- *
- *   return ContentService.createTextOutput(JSON.stringify({"status": "success"}))
- *     .setMimeType(ContentService.MimeType.JSON);
- * }
- */
-
-import { AuditData } from '../types';
+import { AuditData, AuditItem, AuditSession } from '../types';
 
 const WEB_APP_URL = import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL?.trim() || '';
 
 export const hasGoogleSheetsConfig = Boolean(WEB_APP_URL);
+
+const normalizeItemsForCompare = (items: AuditItem[]) =>
+  items.map((item) => ({
+    id: Number(item.id),
+    requisito: item.requisito?.trim() || '',
+    descripcion: item.descripcion?.trim() || '',
+    roles: [...(item.roles || [])].map((role) => role.trim()).sort(),
+  }));
+
+const postToWebApp = async (payload: unknown) => {
+  if (!WEB_APP_URL) {
+    return { success: true, localOnly: true };
+  }
+
+  await fetch(WEB_APP_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return { success: true };
+};
 
 export const testConnection = async () => {
   if (!WEB_APP_URL) return false;
@@ -38,27 +42,94 @@ export const testConnection = async () => {
 };
 
 export const saveToSheets = async (data: AuditData) => {
-  if (!WEB_APP_URL) {
-    console.warn('No Google Apps Script URL provided. Data not saved to Sheets.');
-    return { success: true, localOnly: true };
-  }
-
   try {
-    const response = await fetch(WEB_APP_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    return await postToWebApp({
+      type: 'audit',
+      payload: data,
+      ...data,
+    });
+  } catch (error) {
+    console.error('Error saving audit:', error);
+    throw error;
+  }
+};
+
+export const saveQuestionsConfig = async (items: AuditItem[]) => {
+  try {
+    const result = await postToWebApp({
+      type: 'questions_config',
+      payload: {
+        updatedAt: Date.now(),
+        items,
       },
-      body: JSON.stringify(data),
     });
 
-    if (!response.ok) {
-      throw new Error(`Google Sheets request failed with status ${response.status}`);
+    if (!WEB_APP_URL) {
+      return result;
     }
 
-    return await response.json();
+    await new Promise((resolve) => setTimeout(resolve, 900));
+
+    const remoteItems = await loadQuestionsConfig();
+    const localSnapshot = JSON.stringify(normalizeItemsForCompare(items));
+    const remoteSnapshot = JSON.stringify(normalizeItemsForCompare(remoteItems || []));
+
+    if (!remoteItems || localSnapshot !== remoteSnapshot) {
+      throw new Error('QUESTIONS_CONFIG_NOT_PERSISTED');
+    }
+
+    return result;
   } catch (error) {
-    console.error('Error saving to sheets:', error);
+    console.error('Error saving questions config:', error);
     throw error;
+  }
+};
+
+export const saveSessionsSnapshot = async (sessions: AuditSession[]) => {
+  try {
+    return await postToWebApp({
+      type: 'sessions_snapshot',
+      payload: {
+        updatedAt: Date.now(),
+        sessions,
+      },
+    });
+  } catch (error) {
+    console.error('Error saving sessions snapshot:', error);
+    throw error;
+  }
+};
+
+export const loadQuestionsConfig = async () => {
+  if (!WEB_APP_URL) return null;
+
+  try {
+    const response = await fetch(`${WEB_APP_URL}?resource=questions`, { method: 'GET' });
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!Array.isArray(data?.items)) return null;
+
+    return data.items as AuditItem[];
+  } catch (error) {
+    console.error('Error loading questions config:', error);
+    return null;
+  }
+};
+
+export const loadSessionsSnapshot = async () => {
+  if (!WEB_APP_URL) return null;
+
+  try {
+    const response = await fetch(`${WEB_APP_URL}?resource=sessions`, { method: 'GET' });
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!Array.isArray(data?.sessions)) return null;
+
+    return data.sessions as AuditSession[];
+  } catch (error) {
+    console.error('Error loading sessions snapshot:', error);
+    return null;
   }
 };

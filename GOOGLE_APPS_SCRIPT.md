@@ -1,57 +1,219 @@
-# Instrucciones para Google Sheets
+  # Instrucciones para Google Sheets
 
-Siga estos pasos para conectar su aplicacion:
+Use este Apps Script para guardar:
+- auditorias terminadas
+- configuracion de preguntas
+- sesiones y avances en curso
 
-1. Abra su Google Sheet.
-2. Vaya a `Extensiones > Apps Script`.
-3. Borre el contenido actual y pegue este codigo:
+## 1. Crear hojas
+
+En su archivo de Google Sheets cree estas hojas:
+- `Auditorias`
+- `Configuracion`
+- `Sesiones`
+
+## 2. Pegue este codigo en Apps Script
 
 ```javascript
+function getSheetByName_(name) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+  }
+  return sheet;
+}
+
+function ensureAuditHeader_(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      "Fecha",
+      "Sucursal",
+      "Legajo",
+      "Puntajes",
+      "Detalle por item",
+      "Observaciones",
+      "Evidencias",
+      "Resultado Final %",
+      "Admin %",
+      "Pre-Entrega %",
+      "Ventas %"
+    ]);
+  }
+}
+
+function ensureConfigHeader_(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["ID", "Requisito", "Descripcion", "Roles"]);
+  }
+}
+
+function ensureSessionsHeader_(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["UpdatedAt", "SessionsJson"]);
+  }
+}
+
+function saveQuestionsConfig_(items) {
+  var sheet = getSheetByName_("Configuracion");
+  ensureConfigHeader_(sheet);
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, 4).clearContent();
+  }
+
+  if (!items || !items.length) return;
+
+  var rows = items.map(function(item) {
+    return [
+      item.id,
+      item.requisito,
+      item.descripcion,
+      (item.roles || []).join(", ")
+    ];
+  });
+
+  sheet.getRange(2, 1, rows.length, 4).setValues(rows);
+}
+
+function loadQuestionsConfig_() {
+  var sheet = getSheetByName_("Configuracion");
+  ensureConfigHeader_(sheet);
+
+  if (sheet.getLastRow() <= 1) {
+    return { items: [] };
+  }
+
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
+  var items = values
+    .filter(function(row) { return row[0]; })
+    .map(function(row) {
+      return {
+        id: Number(row[0]),
+        requisito: row[1],
+        descripcion: row[2],
+        roles: row[3] ? String(row[3]).split(",").map(function(role) { return role.trim(); }) : []
+      };
+    });
+
+  return { items: items };
+}
+
+function saveSessionsSnapshot_(sessions) {
+  var sheet = getSheetByName_("Sesiones");
+  ensureSessionsHeader_(sheet);
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, 2).clearContent();
+  }
+
+  sheet.getRange(2, 1, 1, 2).setValues([
+    [new Date(), JSON.stringify(sessions || [])]
+  ]);
+}
+
+function loadSessionsSnapshot_() {
+  var sheet = getSheetByName_("Sesiones");
+  ensureSessionsHeader_(sheet);
+
+  if (sheet.getLastRow() <= 1) {
+    return { sessions: [] };
+  }
+
+  var rawJson = sheet.getRange(2, 2).getValue();
+  if (!rawJson) {
+    return { sessions: [] };
+  }
+
+  return { sessions: JSON.parse(rawJson) };
+}
+
+function doGet(e) {
+  var resource = e && e.parameter ? e.parameter.resource : "";
+
+  if (resource === "questions") {
+    return ContentService
+      .createTextOutput(JSON.stringify(loadQuestionsConfig_()))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (resource === "sessions") {
+    return ContentService
+      .createTextOutput(JSON.stringify(loadSessionsSnapshot_()))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  return ContentService
+    .createTextOutput(JSON.stringify({ status: "ok" }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 function doPost(e) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getActiveSheet();
-    var data = JSON.parse(e.postData.contents);
+    var body = JSON.parse(e.postData.contents);
+    var type = body.type || "audit";
+    var payload = body.payload || {};
 
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(["Fecha", "Sucursal", "Legajo", "Puntajes", "Observaciones", "Evidencias", "Resultado Final %"]);
+    if (type === "questions_config") {
+      saveQuestionsConfig_(payload.items || []);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: "success" }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
 
-    var scoresValues = Object.values(data.scores);
+    if (type === "sessions_snapshot") {
+      saveSessionsSnapshot_(payload.sessions || []);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: "success" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var sheet = getSheetByName_("Auditorias");
+    ensureAuditHeader_(sheet);
+
+    var scoresValues = Object.values(payload.scores || {});
     var totalPoints = scoresValues.length;
     var achievedPoints = scoresValues.reduce(function(a, b) { return a + b; }, 0);
     var percentage = totalPoints > 0 ? (achievedPoints / totalPoints) * 100 : 0;
 
     sheet.appendRow([
       new Date(),
-      data.sucursal,
-      data.legajoNombre,
-      JSON.stringify(data.scores),
-      data.observaciones,
-      data.evidencias.length + " img",
-      percentage.toFixed(2) + "%"
+      payload.sucursal || "",
+      payload.legajoNombre || "",
+      JSON.stringify(payload.scores || {}),
+      JSON.stringify(payload.itemDetails || {}),
+      payload.observaciones || "",
+      (payload.evidencias || []).length + " img",
+      percentage.toFixed(2) + "%",
+      "",
+      "",
+      ""
     ]);
 
-    return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: "success" }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ status: "error", error: err.toString() }))
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: "error", error: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
-
-function doGet() {
-  return ContentService.createTextOutput("OK");
-}
 ```
 
-4. Haga `Implementar > Nueva implementacion > Aplicacion web`.
-5. En acceso, elija `Cualquiera`.
-6. Copie la URL terminada en `/exec`.
-7. Cree un archivo `.env.local` en la raiz del proyecto con este contenido:
+## 3. Implementar
+
+1. Vaya a `Implementar > Nueva implementacion > Aplicacion web`
+2. En acceso elija `Cualquiera`
+3. Copie la URL terminada en `/exec`
+4. Pegue la URL en `.env.local`
 
 ```env
 VITE_GOOGLE_APPS_SCRIPT_URL="https://script.google.com/macros/s/SU_DEPLOYMENT_ID/exec"
 ```
 
-8. Reinicie `npm run dev`.
+## 4. Reiniciar
+
+Reinicie `npm run dev`.
