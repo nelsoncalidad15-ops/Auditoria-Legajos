@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { AuditItem, AuditItemDetail } from '../types';
-import { Check, ChevronDown, MessageSquareText, Paperclip, X } from 'lucide-react';
+import { Check, MessageSquareText, Paperclip, X } from 'lucide-react';
 import { EvidenceUpload } from './EvidenceUpload';
 
 interface Props {
@@ -21,124 +21,148 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, onChange, onDet
     return count;
   }, [detail]);
 
-  const statusLabel = score === 1 ? 'OK' : score === 0 ? 'Desvio' : 'Pendiente';
-  const statusClass =
-    score === 1
-      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-      : score === 0
-        ? 'bg-red-50 text-red-700 border-red-200'
-        : 'bg-slate-100 text-slate-500 border-slate-200';
+  const isOk = score === 1;
+  const isDesvio = score === 0;
+  const isPending = score === undefined;
+
+  // Estado visual del número
+  const numBg = isOk
+    ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-100 shadow-sm'
+    : isDesvio
+      ? 'bg-red-500 text-white border-red-400 shadow-red-100 shadow-sm'
+      : 'bg-slate-100 text-slate-400 border-slate-200';
+
+  // Color de la fila completa según estado
+  const rowBg = isOk
+    ? 'bg-emerald-50/40 border-l-2 border-l-emerald-400'
+    : isDesvio
+      ? 'bg-red-50/40 border-l-2 border-l-red-400'
+      : isPending
+        ? 'border-l-2 border-l-transparent'
+        : '';
 
   return (
-    <div id={`audit-item-${item.id}`} className="px-4 py-4 sm:px-6 sm:py-5 scroll-mt-24">
-      <div className="rounded-[28px] border border-white/70 bg-white/40 shadow-[0_18px_40px_rgba(148,163,184,0.12)]">
-        <div className="p-4 sm:p-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-indigo-100 bg-indigo-50 text-[10px] font-black text-indigo-500">
-                  {item.id}
+    <div id={`audit-item-${item.id}`} className={`scroll-mt-6 transition-colors duration-300 ${rowBg}`}>
+      {/* Separador */}
+      <div className="mx-4 sm:mx-6 border-t border-slate-100/80 first:border-t-0" />
+
+      <div className="px-4 py-4 sm:px-6 sm:py-5">
+        {/* Fila principal */}
+        <div className="flex items-center gap-3 sm:gap-4">
+
+          {/* Número con indicador de estado */}
+          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[10px] font-black transition-all duration-200 ${numBg}`}>
+            {isOk ? <Check size={13} strokeWidth={3.5} /> : isDesvio ? <X size={13} strokeWidth={3.5} /> : item.id}
+          </div>
+
+          {/* Contenido central */}
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <h3 className="text-[13px] sm:text-[14px] font-bold text-slate-800 leading-snug">{item.requisito}</h3>
+              {item.descripcion && (
+                <span className="text-[11px] text-slate-400 leading-snug">{item.descripcion}</span>
+              )}
+            </div>
+            {item.roles.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {item.roles.map((role) => (
+                  <span
+                    key={role}
+                    className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500"
+                  >
+                    {role}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Botones OK / DESVÍO + Nota */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* OK */}
+            <button
+              onClick={() => onChange(1)}
+              title="OK"
+              className={`audit-btn flex items-center gap-2 rounded-2xl px-4 py-2.5 text-[12px] font-black uppercase tracking-wide transition-all duration-150 select-none ${
+                isOk
+                  ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200 scale-105'
+                  : 'bg-white text-emerald-600 border-2 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300 hover:scale-105'
+              }`}
+            >
+              <Check size={14} strokeWidth={3} />
+              <span className="hidden sm:inline">OK</span>
+            </button>
+
+            {/* DESVÍO */}
+            <button
+              onClick={() => onChange(0)}
+              title="Desvío"
+              className={`audit-btn flex items-center gap-2 rounded-2xl px-4 py-2.5 text-[12px] font-black uppercase tracking-wide transition-all duration-150 select-none ${
+                isDesvio
+                  ? 'bg-red-500 text-white shadow-lg shadow-red-200 scale-105'
+                  : 'bg-white text-red-500 border-2 border-red-200 hover:bg-red-50 hover:border-red-300 hover:scale-105'
+              }`}
+            >
+              <X size={14} strokeWidth={3} />
+              <span className="hidden sm:inline">Desvío</span>
+            </button>
+
+            {/* Nota */}
+            <button
+              onClick={() => setShowDetails((prev) => !prev)}
+              title={showDetails ? 'Ocultar notas' : 'Agregar nota o evidencia'}
+              className={`audit-btn relative flex items-center justify-center rounded-xl p-2.5 transition-all duration-150 border-2 ${
+                showDetails
+                  ? 'bg-slate-700 text-white border-slate-700'
+                  : detailCount > 0
+                    ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100'
+                    : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+              }`}
+            >
+              <MessageSquareText size={15} />
+              {detailCount > 0 && !showDetails && (
+                <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[8px] font-black text-white shadow-sm">
+                  {detailCount}
                 </span>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-sm font-black text-slate-800">{item.requisito}</h3>
-                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] ${statusClass}`}>
-                      {statusLabel}
-                    </span>
-                  </div>
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-slate-500">{item.descripcion}</p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {item.roles.map((role) => (
-                      <span
-                        key={role}
-                        className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-slate-500"
-                      >
-                        {role}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3 xl:w-[320px]">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => onChange(1)}
-                  className={`flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-[0.14em] transition-all ${
-                    score === 1
-                      ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'
-                      : 'border border-slate-200 bg-white text-slate-500 hover:border-emerald-300 hover:text-emerald-600'
-                  }`}
-                >
-                  <Check size={14} strokeWidth={3} />
-                  OK
-                </button>
-                <button
-                  onClick={() => onChange(0)}
-                  className={`flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-[0.14em] transition-all ${
-                    score === 0
-                      ? 'bg-red-500 text-white shadow-lg shadow-red-200'
-                      : 'border border-slate-200 bg-white text-slate-500 hover:border-red-300 hover:text-red-600'
-                  }`}
-                >
-                  <X size={14} strokeWidth={3} />
-                  Desvio
-                </button>
-              </div>
-
-              <button
-                onClick={() => setShowDetails((prev) => !prev)}
-                className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-left transition-all hover:bg-white"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="rounded-full bg-white p-2 text-slate-400 shadow-sm">
-                    <MessageSquareText size={14} />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-600">Notas y evidencia</p>
-                    <p className="text-xs text-slate-400">
-                      {detailCount > 0 ? `${detailCount} detalle(s) cargado(s)` : 'Agregar comentario o foto'}
-                    </p>
-                  </div>
-                </div>
-                <ChevronDown
-                  size={16}
-                  className={`shrink-0 text-slate-400 transition-transform ${showDetails ? 'rotate-180' : ''}`}
-                />
-              </button>
-            </div>
+              )}
+            </button>
           </div>
         </div>
 
+        {/* Panel desplegable */}
         {showDetails && (
-          <div className="grid gap-4 border-t border-white/70 bg-white/30 p-4 sm:p-5 xl:grid-cols-[1.05fr_0.95fr]">
-            <div className="rounded-2xl border border-white/70 bg-white/65 p-4">
-              <label className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                <MessageSquareText size={12} />
-                Comentario del item
+          <div className="mt-4 ml-11 grid gap-3 sm:grid-cols-2 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+              <label className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                <MessageSquareText size={11} />
+                Observación
               </label>
               <textarea
                 value={detail.comentario}
                 onChange={(e) => onDetailChange({ ...detail, comentario: e.target.value })}
-                placeholder="Anota observaciones puntuales de esta pregunta..."
-                className="glass-input min-h-[110px] w-full resize-none !rounded-[20px] !bg-white/80 text-sm"
+                placeholder="Anota observaciones puntuales..."
+                rows={3}
+                className="glass-input min-h-[80px] w-full resize-none !rounded-xl !bg-slate-50/60 text-[13px] !py-2.5"
               />
             </div>
 
-            <div className="rounded-2xl border border-white/70 bg-white/65 p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                  <Paperclip size={12} />
-                  Evidencias del item
+            <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+              <div className="mb-2 flex items-center justify-between">
+                <label className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                  <Paperclip size={11} />
+                  Evidencias
                 </label>
-                <span className="text-[10px] font-bold text-slate-400">{detail.evidencias.length} archivo(s)</span>
+                {detail.evidencias.length > 0 && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-black text-amber-700">
+                    {detail.evidencias.length} foto(s)
+                  </span>
+                )}
               </div>
               <EvidenceUpload
                 evidencias={detail.evidencias}
                 onChange={(evidencias) => onDetailChange({ ...detail, evidencias })}
                 compact
-                buttonLabel="Foto"
+                buttonLabel="Agregar foto"
               />
             </div>
           </div>

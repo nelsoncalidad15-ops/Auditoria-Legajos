@@ -50,7 +50,18 @@ function ensureConfigHeader_(sheet) {
 
 function ensureSessionsHeader_(sheet) {
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(["UpdatedAt", "SessionsJson"]);
+    sheet.appendRow([
+      "SessionId",
+      "Nombre",
+      "Sucursal",
+      "Auditor",
+      "Objetivo",
+      "Estado",
+      "CreatedAt",
+      "UpdatedAt",
+      "Legajos",
+      "SessionJson"
+    ]);
   }
 }
 
@@ -100,18 +111,50 @@ function loadQuestionsConfig_() {
   return { items: items };
 }
 
-function saveSessionsSnapshot_(sessions) {
+function saveSessionRecord_(session) {
   var sheet = getSheetByName_("Sesiones");
   ensureSessionsHeader_(sheet);
 
-  var lastRow = sheet.getLastRow();
-  if (lastRow > 1) {
-    sheet.getRange(2, 1, lastRow - 1, 2).clearContent();
+  if (!session || !session.id) {
+    throw new Error("SESSION_ID_REQUIRED");
   }
 
-  sheet.getRange(2, 1, 1, 2).setValues([
-    [new Date(), JSON.stringify(sessions || [])]
-  ]);
+  var values = sheet.getLastRow() > 1
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 10).getValues()
+    : [];
+
+  var targetRow = -1;
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0]) === String(session.id)) {
+      targetRow = i + 2;
+      break;
+    }
+  }
+
+  if (targetRow === -1) {
+    targetRow = sheet.getLastRow() + 1;
+  } else {
+    var existingUpdatedAt = Number(values[targetRow - 2][7] || 0);
+    var incomingUpdatedAt = Number(session.updatedAt || 0);
+    if (existingUpdatedAt > incomingUpdatedAt) {
+      return { skipped: true, reason: "OLDER_SESSION_VERSION" };
+    }
+  }
+
+  sheet.getRange(targetRow, 1, 1, 10).setValues([[
+    session.id,
+    session.nombre || "",
+    session.sucursal || "",
+    session.auditor || "",
+    Number(session.objetivo || 0),
+    session.status || "en_curso",
+    Number(session.createdAt || 0),
+    Number(session.updatedAt || 0),
+    JSON.stringify(session.legajos || []),
+    JSON.stringify(session)
+  ]]);
+
+  return { skipped: false };
 }
 
 function loadSessionsSnapshot_() {
@@ -122,12 +165,36 @@ function loadSessionsSnapshot_() {
     return { sessions: [] };
   }
 
-  var rawJson = sheet.getRange(2, 2).getValue();
-  if (!rawJson) {
-    return { sessions: [] };
+  var header = sheet.getRange(1, 1, 1, Math.min(sheet.getLastColumn(), 10)).getValues()[0];
+  var isLegacySnapshot = header[0] === "UpdatedAt" && header[1] === "SessionsJson";
+
+  if (isLegacySnapshot) {
+    var rawJson = sheet.getRange(2, 2).getValue();
+    if (!rawJson) {
+      return { sessions: [] };
+    }
+
+    return { sessions: JSON.parse(rawJson) };
   }
 
-  return { sessions: JSON.parse(rawJson) };
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 10).getValues();
+  var byId = {};
+
+  values.forEach(function(row) {
+    if (!row[0] || !row[9]) return;
+
+    var session = JSON.parse(row[9]);
+    var existing = byId[session.id];
+    if (!existing || Number(session.updatedAt || 0) >= Number(existing.updatedAt || 0)) {
+      byId[session.id] = session;
+    }
+  });
+
+  var sessions = Object.keys(byId)
+    .map(function(key) { return byId[key]; })
+    .sort(function(a, b) { return Number(b.updatedAt || 0) - Number(a.updatedAt || 0); });
+
+  return { sessions: sessions };
 }
 
 function doGet(e) {
@@ -164,7 +231,16 @@ function doPost(e) {
     }
 
     if (type === "sessions_snapshot") {
-      saveSessionsSnapshot_(payload.sessions || []);
+      (payload.sessions || []).forEach(function(session) {
+        saveSessionRecord_(session);
+      });
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: "success" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (type === "session_record") {
+      saveSessionRecord_(payload.session || {});
       return ContentService
         .createTextOutput(JSON.stringify({ status: "success" }))
         .setMimeType(ContentService.MimeType.JSON);

@@ -11,23 +11,26 @@ import {
   ArrowLeft,
   Building2,
   Camera,
+  ChevronRight,
   ClipboardList,
   Download,
   FolderKanban,
-  LayoutDashboard,
+  Home,
   ListChecks,
   Plus,
   Save,
-  SlidersHorizontal,
+  Settings2,
   Sparkles,
   Trash2,
-  User,
   X,
+  Zap,
 } from 'lucide-react';
+import { useHashRouter } from './hooks/useHashRouter';
 import { AUDIT_ITEMS, calculateSummary } from './constants';
 import { AuditData, AuditItem, AuditItemDetail, AuditSession, BranchName, LegajoRecord, LegajoStatus } from './types';
 import { AuditRow } from './components/AuditRow';
 import { SummaryChart } from './components/SummaryChart';
+import { FormacionDashboard } from './components/FormacionDashboard';
 import {
   hasGoogleSheetsConfig,
   loadSessionsSnapshot,
@@ -46,7 +49,7 @@ declare module 'jspdf' {
   }
 }
 
-type MainTab = 'auditorias' | 'preguntas';
+// Route types handled by useHashRouter
 
 const SESSIONS_STORAGE_KEY = 'audit_sessions_v3';
 const ITEMS_STORAGE_KEY = 'audit_items_config';
@@ -82,15 +85,12 @@ const isCompactMobileViewport = () =>
 
 export default function App() {
   const createSessionRef = React.useRef<HTMLElement | null>(null);
-  const [mainTab, setMainTab] = useState<MainTab>('auditorias');
+  const { route, goHome, goPreguntas, goLote, goLegajo, goPreview, goBack } = useHashRouter();
   const [items, setItems] = useState<AuditItem[]>(AUDIT_ITEMS);
   const [sessions, setSessions] = useState<AuditSession[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [selectedLegajoId, setSelectedLegajoId] = useState<string | null>(null);
   const [showCreateSession, setShowCreateSession] = useState(false);
   const [showCreateLegajo, setShowCreateLegajo] = useState(false);
   const [showQuestionsForm, setShowQuestionsForm] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingQuestions, setIsSavingQuestions] = useState(false);
   const [isSyncingSessions, setIsSyncingSessions] = useState(false);
@@ -108,6 +108,11 @@ export default function App() {
     description: '',
     roles: [] as string[],
   });
+
+  // Derived from route
+  const selectedSessionId = ('sessionId' in route) ? route.sessionId : null;
+  const selectedLegajoId = ('legajoId' in route) ? route.legajoId : null;
+  const showPreview = route.name === 'preview';
 
   const hydrateSharedData = React.useCallback(() => {
     let localSessionsSnapshot: AuditSession[] = [];
@@ -127,7 +132,6 @@ export default function App() {
         localSessionsSnapshot = parsed;
         const sorted = sortSessionsByUpdatedAt(parsed);
         setSessions(sorted);
-        setSelectedSessionId(null);
       } catch (error) {
         console.error(error);
       }
@@ -147,7 +151,6 @@ export default function App() {
       if (remoteSessions && remoteSessions.length > 0) {
         const sorted = sortSessionsByUpdatedAt(remoteSessions);
         setSessions(sorted);
-        setSelectedSessionId(null);
         localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sorted));
         setSyncMessage('');
         return;
@@ -155,7 +158,6 @@ export default function App() {
 
       if (hasGoogleSheetsConfig) {
         setSessions([]);
-        setSelectedSessionId(null);
         setSyncMessage('Google Sheets no devolvio auditorias compartidas. No se restauraron datos locales automaticamente.');
         return;
       }
@@ -357,54 +359,19 @@ export default function App() {
     { label: 'Cumplimiento Ventas', value: summary.ventas, color: 'text-sky-600' },
   ];
 
-  const canGoBack =
-    showPreview ||
-    showCreateSession ||
-    showCreateLegajo ||
-    showQuestionsForm ||
-    selectedLegajoId !== null ||
-    selectedSessionId !== null ||
-    mainTab === 'preguntas';
+  const canGoBack = route.name !== 'home';
 
-  const currentViewLabel = showPreview
+  const currentViewLabel = route.name === 'preview'
     ? 'Vista previa'
-    : selectedLegajoId
+    : route.name === 'legajo'
       ? 'Legajo'
-      : selectedSessionId
+      : route.name === 'lote'
         ? 'Lote'
-        : mainTab === 'preguntas'
+        : route.name === 'preguntas'
           ? 'Preguntas'
           : 'Inicio';
 
-  const handleGoBack = () => {
-    if (showPreview) {
-      setShowPreview(false);
-      return;
-    }
-    if (showQuestionsForm) {
-      setShowQuestionsForm(false);
-      return;
-    }
-    if (showCreateLegajo) {
-      setShowCreateLegajo(false);
-      return;
-    }
-    if (showCreateSession) {
-      setShowCreateSession(false);
-      return;
-    }
-    if (selectedLegajoId) {
-      setSelectedLegajoId(null);
-      return;
-    }
-    if (selectedSessionId) {
-      setSelectedSessionId(null);
-      return;
-    }
-    if (mainTab === 'preguntas') {
-      setMainTab('auditorias');
-    }
-  };
+  const handleGoBack = () => goBack();
 
   const updateLegajo = (legajoId: string, updater: (legajo: LegajoRecord) => LegajoRecord) => {
     if (!selectedSessionId) return;
@@ -423,8 +390,6 @@ export default function App() {
   };
 
   const moveToNextAuditItem = (currentItemId: number) => {
-    if (!isCompactMobileViewport()) return;
-
     const currentIndex = items.findIndex((item) => item.id === currentItemId);
     if (currentIndex < 0) return;
 
@@ -453,8 +418,7 @@ export default function App() {
     };
 
     persistSessions([session, ...sessions]);
-    setSelectedSessionId(session.id);
-    setSelectedLegajoId(null);
+    goLote(session.id);
     setShowCreateSession(false);
     setNewSession({
       nombre: '',
@@ -478,7 +442,7 @@ export default function App() {
     });
 
     persistSessions(nextSessions);
-    setSelectedLegajoId(legajo.id);
+    if (selectedSession) goLegajo(selectedSession.id, legajo.id);
     setShowCreateLegajo(false);
     setNewLegajoNombre('');
   };
@@ -556,7 +520,7 @@ export default function App() {
         finalizedAt: Date.now(),
       }));
 
-      setSelectedLegajoId(null);
+      if (selectedSessionId) goLote(selectedSessionId);
     } catch (error) {
       alert('No se pudo guardar la auditoria en este momento. Intente nuevamente.');
     } finally {
@@ -1120,8 +1084,26 @@ export default function App() {
     }
 
     doc.save(`Auditoria_Lote_${selectedSession.sucursal}_${selectedSession.nombre}_${Date.now()}.pdf`);
-    setShowPreview(false);
+    goLote(selectedSession.id);
   };
+
+  /* ─── breadcrumb helpers ─────────────────────────── */
+  const breadcrumbs = (() => {
+    const crumbs: { label: string; href: string }[] = [{ label: 'Inicio', href: '#/' }];
+    if (route.name === 'preguntas') {
+      crumbs.push({ label: 'Preguntas', href: '#/preguntas' });
+    }
+    if (route.name === 'lote' || route.name === 'preview' || route.name === 'legajo') {
+      crumbs.push({ label: selectedSession?.nombre ?? 'Lote', href: `#/lote/${route.sessionId}` });
+    }
+    if (route.name === 'preview') {
+      crumbs.push({ label: 'Vista previa', href: `#/lote/${route.sessionId}/preview` });
+    }
+    if (route.name === 'legajo') {
+      crumbs.push({ label: selectedLegajo?.nombre ?? 'Legajo', href: `#/lote/${route.sessionId}/legajo/${route.legajoId}` });
+    }
+    return crumbs;
+  })();
 
   return (
     <div className="min-h-screen relative overflow-x-hidden font-sans pb-20">
@@ -1130,10 +1112,12 @@ export default function App() {
         <div className="absolute bottom-20 right-20 w-96 h-96 bg-sky-200 rounded-full blur-[120px]" />
       </div>
 
-      <header className="fixed top-0 left-0 right-0 z-50 px-3 sm:px-4 pt-3 sm:pt-4">
+      <header className="relative z-50 px-3 sm:px-4 pt-3 sm:pt-4">
         <div className="max-w-6xl mx-auto rounded-[28px] border border-white/70 bg-white/75 backdrop-blur-xl shadow-[0_20px_55px_rgba(148,163,184,0.22)] flex items-center justify-between gap-3 px-3 py-3 sm:px-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 bg-slate-900 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shrink-0">A</div>
+            <a href="#/" className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white font-bold shadow-lg shrink-0 hover:bg-slate-700 transition-colors">
+              <Zap size={18} />
+            </a>
             <div className="min-w-0">
               <h1 className="text-base sm:text-lg font-bold tracking-tight text-slate-800 uppercase leading-none">Auditores v2.1</h1>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[10px] font-bold">
@@ -1141,66 +1125,52 @@ export default function App() {
                   <span className={`w-2 h-2 rounded-full ${isOnline === null ? 'bg-gray-400' : isOnline ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                   {statusLabel}
                 </p>
-                <span className="text-slate-400">TOTAL AUDITADOS: {totalAudited}</span>
+                <span className="text-slate-400">AUDITADOS: {totalAudited}</span>
               </div>
             </div>
           </div>
 
-          <div className="hidden md:flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => setMainTab('auditorias')}
-              className={`rounded-full px-4 py-2 text-[11px] font-black uppercase tracking-[0.18em] ${mainTab === 'auditorias' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-500 border border-slate-200'}`}
-            >
-              Auditorias
-            </button>
-            <button
-              onClick={() => setMainTab('preguntas')}
-              className={`rounded-full px-4 py-2 text-[11px] font-black uppercase tracking-[0.18em] ${mainTab === 'preguntas' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-500 border border-slate-200'}`}
-            >
+          <nav className="flex items-center gap-1.5 shrink-0">
+            <a href="#/" className={`rounded-full px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] transition-all ${route.name === 'home' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white/70 text-slate-500 border border-slate-200 hover:border-slate-300'}`}>
+              <Home size={13} className="inline mr-1 -mt-0.5" />
+              Inicio
+            </a>
+            <a href="#/formacion" className={`rounded-full px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] transition-all ${route.name === 'formacion' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white/70 text-slate-500 border border-slate-200 hover:border-slate-300'}`}>
+              <ClipboardList size={13} className="inline mr-1 -mt-0.5" />
+              Formación
+            </a>
+            <a href="#/preguntas" className={`rounded-full px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] transition-all ${route.name === 'preguntas' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white/70 text-slate-500 border border-slate-200 hover:border-slate-300'}`}>
+              <Settings2 size={13} className="inline mr-1 -mt-0.5" />
               Preguntas
-            </button>
-          </div>
+            </a>
+          </nav>
         </div>
 
-        <div className="max-w-6xl mx-auto mt-3 flex items-center justify-between gap-3 px-1">
-          <div className="flex items-center gap-2">
-            {canGoBack && (
-              <button
-                onClick={handleGoBack}
-                className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/80 px-4 py-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-600 shadow-sm"
-              >
-                <ArrowLeft size={14} />
-                Volver
-              </button>
-            )}
-            <span className="rounded-full border border-white/70 bg-white/60 px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-              {currentViewLabel}
-            </span>
+        {breadcrumbs.length > 1 && (
+          <div className="max-w-6xl mx-auto mt-2 px-1 flex items-center gap-1 flex-wrap">
+            {breadcrumbs.map((crumb, i) => (
+              <React.Fragment key={crumb.href}>
+                {i > 0 && <ChevronRight size={12} className="text-slate-300" />}
+                <a
+                  href={crumb.href}
+                  className={`rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] transition-all ${
+                    i === breadcrumbs.length - 1
+                      ? 'bg-white/80 border border-white/70 text-slate-700 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  {crumb.label}
+                </a>
+              </React.Fragment>
+            ))}
           </div>
-
-          <div className="flex md:hidden items-center gap-2">
-            <button
-              onClick={() => setMainTab('auditorias')}
-              className={`rounded-full px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] ${
-                mainTab === 'auditorias' ? 'bg-slate-900 text-white' : 'border border-white/70 bg-white/80 text-slate-500'
-              }`}
-            >
-              Auditorias
-            </button>
-            <button
-              onClick={() => setMainTab('preguntas')}
-              className={`rounded-full px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] ${
-                mainTab === 'preguntas' ? 'bg-slate-900 text-white' : 'border border-white/70 bg-white/80 text-slate-500'
-              }`}
-            >
-              Preguntas
-            </button>
-          </div>
-        </div>
+        )}
       </header>
 
-      <main className="max-w-6xl mx-auto px-3 sm:px-4 pt-40 sm:pt-44 space-y-6">
-        {mainTab === 'auditorias' ? (
+      <main className="max-w-6xl mx-auto px-3 sm:px-4 pt-6 sm:pt-8 space-y-6">
+        {route.name === 'formacion' ? (
+          <FormacionDashboard />
+        ) : route.name !== 'preguntas' ? (
           <>
             {syncMessage && (
               <section className="max-w-6xl mx-auto">
@@ -1221,36 +1191,52 @@ export default function App() {
               </section>
             )}
 
-            {!selectedSession ? (
+            {route.name === 'home' ? (
               <>
                 <section className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-4">
-                  <div className="rounded-[34px] border border-white/70 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.98),_rgba(248,250,252,0.9)_48%,_rgba(226,232,240,0.78)_100%)] backdrop-blur-xl shadow-[0_26px_60px_rgba(148,163,184,0.18)] p-6 sm:p-7">
+                  <div className="rounded-[34px] border border-white/80 bg-white/85 backdrop-blur-xl shadow-[0_26px_60px_rgba(99,102,241,0.08)] p-6 sm:p-8">
                     <div className="flex items-center gap-2">
-                      <Sparkles size={14} className="text-slate-700" />
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.24em]">Panel principal</p>
+                      <Sparkles size={14} className="text-indigo-500" />
+                      <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.24em]">Panel de control</p>
                     </div>
-                    <div className="mt-4 max-w-2xl">
-                      <h2 className="text-[30px] sm:text-4xl font-black tracking-tight text-slate-900 leading-[1.02]">
-                        Entrá, ubicá tu lote y seguí auditando sin perder el hilo.
-                      </h2>
-                      <p className="mt-3 text-[13px] sm:text-[15px] leading-relaxed text-slate-500 max-w-xl">
-                        Me gusta más que el ingreso siempre sea una portada clara: ver el estado general, arrancar una auditoría nueva o continuar la correcta cuando vos lo decidís.
-                      </p>
+                    <h2 className="mt-3 text-[28px] sm:text-[36px] font-black tracking-tight text-slate-900 leading-[1.05]">
+                      Sistema de auditoría<br />
+                      <span className="text-indigo-600">de legajos</span>
+                    </h2>
+
+                    {/* KPIs grandes */}
+                    <div className="mt-5 grid grid-cols-3 gap-3">
+                      <div className="rounded-[20px] bg-slate-900 text-white p-4">
+                        <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Total</p>
+                        <p className="mt-1.5 text-3xl font-black">{totalAudited}</p>
+                        <p className="mt-0.5 text-[10px] text-slate-400">auditados</p>
+                      </div>
+                      <div className="rounded-[20px] border border-emerald-200 bg-emerald-50 p-4">
+                        <p className="text-[9px] font-black uppercase tracking-[0.18em] text-emerald-500">Jujuy</p>
+                        <p className="mt-1.5 text-3xl font-black text-slate-900">{branchStats.Jujuy.count}</p>
+                        <p className="mt-0.5 text-[10px] text-slate-500">{branchStats.Jujuy.average.toFixed(0)}% prom.</p>
+                      </div>
+                      <div className="rounded-[20px] border border-sky-200 bg-sky-50 p-4">
+                        <p className="text-[9px] font-black uppercase tracking-[0.18em] text-sky-500">Salta</p>
+                        <p className="mt-1.5 text-3xl font-black text-slate-900">{branchStats.Salta.count}</p>
+                        <p className="mt-0.5 text-[10px] text-slate-500">{branchStats.Salta.average.toFixed(0)}% prom.</p>
+                      </div>
                     </div>
+
                     <div className="mt-5 flex flex-col sm:flex-row sm:flex-wrap gap-3">
                       <button
                         onClick={() => setShowCreateSession((prev) => !prev)}
-                        className="w-full sm:w-auto rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-xl shadow-slate-900/20"
+                        className="w-full sm:w-auto rounded-2xl bg-indigo-600 px-6 py-4 text-sm font-black text-white shadow-xl shadow-indigo-200"
                       >
-                        Nueva auditoria
+                        + Nueva auditoria
                       </button>
                       {featuredSession && (
-                        <button
-                          onClick={() => setSelectedSessionId(featuredSession.id)}
-                          className="w-full sm:w-auto rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-black text-slate-700"
+                        <a
+                          href={`#/lote/${featuredSession.id}`}
+                          className="w-full sm:w-auto rounded-2xl border-2 border-slate-200 bg-white px-6 py-4 text-sm font-black text-slate-700 text-center hover:border-slate-300 transition-colors"
                         >
                           Continuar ultima auditoria
-                        </button>
+                        </a>
                       )}
                     </div>
 
@@ -1277,12 +1263,12 @@ export default function App() {
                             </div>
                           </div>
 
-                          <button
-                            onClick={() => setSelectedSessionId(featuredSession.id)}
-                            className="w-full sm:w-auto rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-lg shadow-slate-900/20"
+                          <a
+                            href={`#/lote/${featuredSession.id}`}
+                            className="w-full sm:w-auto rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-lg shadow-slate-900/20 text-center"
                           >
                             Abrir lote
-                          </button>
+                          </a>
                         </div>
 
                         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -1403,12 +1389,12 @@ export default function App() {
                                 <span>En proceso: {enProceso}</span>
                               </div>
                             </div>
-                            <button
-                              onClick={() => setSelectedSessionId(session.id)}
-                              className="rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-lg shadow-slate-900/20"
+                            <a
+                              href={`#/lote/${session.id}`}
+                              className="rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-lg shadow-slate-900/20 text-center"
                             >
                               Continuar
-                            </button>
+                            </a>
                           </div>
                         );
                       })
@@ -1416,57 +1402,60 @@ export default function App() {
                   </div>
                 </section>
               </>
-            ) : !selectedLegajo ? (
+            ) : route.name === 'lote' && selectedSession ? (
               <>
                 <section className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-4">
-                  <div className="rounded-[30px] border border-white/70 bg-white/70 backdrop-blur-xl shadow-[0_22px_50px_rgba(148,163,184,0.18)] p-6">
-                    <button
-                      onClick={() => setSelectedSessionId(null)}
-                      className="inline-flex items-center gap-2 text-sm font-black text-slate-500 mb-4"
-                    >
-                      <ArrowLeft size={16} />
+                  <div className="rounded-[30px] border border-white/80 bg-white/80 backdrop-blur-xl shadow-[0_22px_50px_rgba(99,102,241,0.08)] p-6 sm:p-8">
+                    <a href="#/" className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-indigo-400 hover:text-indigo-600 transition-colors mb-4">
+                      <ArrowLeft size={13} />
                       Volver al inicio
-                    </button>
-                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Auditoria activa</p>
-                    <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">{selectedSession.nombre}</h2>
-                    <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
-                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Sucursal</p>
-                        <p className="mt-2 text-lg font-black text-slate-900">{selectedSession.sucursal}</p>
+                    </a>
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Auditoria en curso</p>
+                    <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900 leading-none">{selectedSession.nombre}</h2>
+                    
+                    {/* Barra de progreso de objetivo */}
+                    <div className="mt-6 rounded-2xl bg-slate-50 border border-slate-200/60 p-5">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">Progreso del objetivo</span>
+                        <span className="text-sm font-black text-slate-900">{selectedSession.legajos.length} / {selectedSession.objetivo} legajos</span>
                       </div>
-                      <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
-                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Auditor</p>
-                        <p className="mt-2 text-lg font-black text-slate-900">{selectedSession.auditor}</p>
+                      <div className="h-3 w-full rounded-full bg-slate-200 overflow-hidden">
+                        <div 
+                          className="h-full rounded-full bg-indigo-500 transition-all duration-1000 ease-out"
+                          style={{ width: `${Math.min(100, (selectedSession.legajos.length / selectedSession.objetivo) * 100)}%` }}
+                        />
                       </div>
-                      <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
-                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Objetivo</p>
-                        <p className="mt-2 text-lg font-black text-slate-900">{selectedSession.objetivo}</p>
-                      </div>
-                      <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
-                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Legajos cargados</p>
-                        <p className="mt-2 text-lg font-black text-slate-900">{selectedSession.legajos.length}</p>
+                      <div className="mt-4 grid grid-cols-2 gap-4 border-t border-slate-200/60 pt-4">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Sucursal</p>
+                          <p className="mt-1 text-sm font-bold text-slate-700">{selectedSession.sucursal}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Auditor</p>
+                          <p className="mt-1 text-sm font-bold text-slate-700">{selectedSession.auditor}</p>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="rounded-[30px] border border-white/70 bg-slate-900 text-white shadow-[0_24px_60px_rgba(15,23,42,0.24)] p-6">
-                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Accion</p>
-                    <h3 className="mt-2 text-2xl font-black">Seguimiento de legajos</h3>
-                    <p className="mt-3 text-sm text-slate-300">
-                      Sumá legajos, retomá los que quedaron a mitad de camino o finalizá los pendientes.
+                  <div className="rounded-[30px] border border-white/70 bg-slate-900 text-white shadow-[0_24px_60px_rgba(15,23,42,0.24)] p-6 sm:p-8 flex flex-col justify-center">
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-sky-400">Acciones</p>
+                    <h3 className="mt-2 text-2xl font-black leading-tight">Seguimiento de legajos</h3>
+                    <p className="mt-3 text-[13px] text-slate-300 leading-relaxed">
+                      Sumá legajos nuevos, retomá los que quedaron a mitad de camino o visualizá el reporte general del lote.
                     </p>
-                    <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                    <div className="mt-8 flex flex-col gap-3">
                       <button
                         onClick={() => setShowCreateLegajo((prev) => !prev)}
-                        className="rounded-2xl bg-white px-5 py-4 text-sm font-black text-slate-900 shadow-lg shadow-slate-950/20"
+                        className="w-full rounded-2xl bg-indigo-500 px-5 py-4 text-sm font-black text-white shadow-xl shadow-indigo-500/20 hover:bg-indigo-600 transition-colors"
                       >
-                        + Nuevo legajo
+                        + Cargar nuevo legajo
                       </button>
                       <button
-                        onClick={() => setShowPreview(true)}
-                        className="rounded-2xl border border-white/20 bg-white/10 px-5 py-4 text-sm font-black text-white transition-colors hover:bg-white/15"
+                        onClick={() => selectedSessionId && goPreview(selectedSessionId)}
+                        className="w-full rounded-2xl border-2 border-slate-700 bg-slate-800 px-5 py-4 text-sm font-black text-slate-300 transition-colors hover:bg-slate-700 hover:text-white"
                       >
-                        Vista previa del lote
+                        Vista previa del lote PDF
                       </button>
                     </div>
                   </div>
@@ -1512,30 +1501,49 @@ export default function App() {
                         const legajoSummary = calculateSummary(legajo.scores, items);
                         return (
                           <div key={legajo.id} className="p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                            <div>
+                            <div className="flex-1 w-full lg:max-w-2xl">
                               <div className="flex flex-wrap items-center gap-2">
                                 <p className="text-lg font-black text-slate-900">{legajo.nombre}</p>
-                                <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${
+                                <span className={`rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.18em] ${
                                   legajo.status === 'finalizado'
-                                    ? 'bg-emerald-100 text-emerald-700'
+                                    ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                                     : legajo.status === 'en_proceso'
-                                      ? 'bg-sky-100 text-sky-700'
-                                      : 'bg-slate-100 text-slate-500'
+                                      ? 'bg-sky-100 text-sky-700 border border-sky-200'
+                                      : 'bg-slate-100 text-slate-500 border border-slate-200'
                                 }`}>
                                   {legajo.status === 'finalizado' ? 'Finalizado' : legajo.status === 'en_proceso' ? 'En proceso' : 'Pendiente'}
                                 </span>
                               </div>
-                              <div className="mt-2 flex flex-wrap gap-4 text-sm text-slate-500">
-                                <span>Puntaje: {legajoSummary.total.toFixed(0)}%</span>
-                                <span>Actualizado: {new Date(legajo.updatedAt).toLocaleString()}</span>
+                              
+                              <div className="mt-3 flex items-center gap-4">
+                                <div className="flex-1">
+                                  <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                                    <div 
+                                      className={`h-full rounded-full transition-all duration-1000 ${
+                                        legajoSummary.total >= 80 ? 'bg-emerald-400' : legajoSummary.total >= 50 ? 'bg-amber-400' : 'bg-red-400'
+                                      }`}
+                                      style={{ width: `${legajoSummary.total}%` }}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="shrink-0 flex items-baseline gap-1">
+                                  <span className={`text-xl font-black ${
+                                    legajoSummary.total >= 80 ? 'text-emerald-600' : legajoSummary.total >= 50 ? 'text-amber-600' : 'text-red-600'
+                                  }`}>{legajoSummary.total.toFixed(0)}</span>
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase">% OK</span>
+                                </div>
+                              </div>
+
+                              <div className="mt-2 text-[11px] text-slate-400 font-medium">
+                                Actualizado: {new Date(legajo.updatedAt).toLocaleString()}
                               </div>
                             </div>
-                            <button
-                              onClick={() => setSelectedLegajoId(legajo.id)}
-                              className="rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-lg shadow-slate-900/20"
+                            <a
+                              href={`#/lote/${selectedSession.id}/legajo/${legajo.id}`}
+                              className="rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-lg shadow-slate-900/20 text-center"
                             >
                               Abrir legajo
-                            </button>
+                            </a>
                           </div>
                         );
                       })
@@ -1543,43 +1551,70 @@ export default function App() {
                   </div>
                 </section>
               </>
-            ) : (
+            ) : route.name === 'legajo' && selectedLegajo ? (
               <>
-                <section className="rounded-[30px] border border-white/70 bg-white/75 backdrop-blur-xl shadow-[0_22px_50px_rgba(148,163,184,0.18)] px-5 py-5 sm:px-6">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <button
-                        onClick={() => setSelectedLegajoId(null)}
-                        className="inline-flex items-center gap-2 text-sm font-black text-slate-500"
+                {/* === HEADER DEL LEGAJO === */}
+                <section className="rounded-[30px] border border-white/80 bg-white/85 backdrop-blur-xl shadow-[0_18px_45px_rgba(148,163,184,0.14)] px-5 py-4 sm:px-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    {/* Nombre */}
+                    <div className="min-w-0">
+                      <a
+                        href={selectedSessionId ? `#/lote/${selectedSessionId}` : '#/'}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400 hover:text-slate-600 transition-colors"
                       >
-                        <ArrowLeft size={16} />
-                        Volver al lote
-                      </button>
-                      <h2 className="mt-3 text-2xl sm:text-3xl font-black tracking-tight text-slate-900">{selectedLegajo.nombre}</h2>
+                        <ArrowLeft size={13} />
+                        Volver
+                      </a>
+                      <h2 className="mt-1.5 text-2xl sm:text-3xl font-black tracking-tight text-slate-900 leading-none">{selectedLegajo.nombre}</h2>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                        {selectedLegajo.status === 'en_proceso' ? 'En proceso' : selectedLegajo.status === 'finalizado' ? 'Finalizado' : 'Pendiente'}
-                      </span>
-                      <span className="rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                        {currentProgress.answered}/{currentProgress.total}
-                      </span>
-                    </div>
-                  </div>
-                </section>
 
-                <section className="glass-card !p-0 overflow-hidden">
-                  <div className="px-4 sm:px-6 py-4 border-b border-white/40 bg-white/20 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div className="flex items-center gap-3">
-                      <ListChecks size={16} className="text-indigo-500" />
-                      <div>
-                        <h2 className="text-xs font-black text-slate-700 uppercase tracking-widest">Puntos de control</h2>
-                        <p className="text-xs text-slate-500 mt-1">{currentProgress.answered} de {currentProgress.total} respondidos</p>
+                    {/* Métricas rápidas */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                        <span className="text-emerald-500">✓</span>
+                        <span className="text-[12px] font-black text-emerald-700">
+                          {Object.values(selectedLegajo.scores).filter((s) => s === 1).length} OK
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+                        <span className="text-red-400">✗</span>
+                        <span className="text-[12px] font-black text-red-600">
+                          {Object.values(selectedLegajo.scores).filter((s) => s === 0).length} Desv.
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                        <span className="text-[12px] font-black text-slate-600">
+                          {currentProgress.answered}/{currentProgress.total}
+                        </span>
+                        {selectedLegajo.status === 'finalizado' && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700">Finalizado</span>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-0 bg-gradient-to-b from-white/10 to-transparent py-1">
+                  {/* Barra de progreso */}
+                  <div className="mt-3.5">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-indigo-400 transition-all duration-500"
+                        style={{ width: `${currentProgress.percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                {/* === LISTA DE PUNTOS DE CONTROL === */}
+                <section className="glass-card !p-0 overflow-hidden">
+                  <div className="px-4 sm:px-6 py-3.5 border-b border-white/40 bg-white/30 flex items-center gap-3">
+                    <ListChecks size={15} className="text-indigo-500 shrink-0" />
+                    <div className="flex items-baseline gap-2">
+                      <h2 className="text-[11px] font-black text-slate-700 uppercase tracking-[0.2em]">Puntos de control</h2>
+                      <span className="text-[11px] text-slate-400">{currentProgress.answered} de {currentProgress.total} respondidos</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-b from-white/5 to-transparent">
                     {items.map((item) => (
                       <AuditRow
                         key={item.id}
@@ -1608,23 +1643,28 @@ export default function App() {
                   </div>
                 </section>
 
-                <div className="pt-2">
+                {/* === BOTÓN FINALIZAR === */}
+                <div className="pt-1 pb-4">
                   <button
                     onClick={handleFinalizeLegajo}
                     disabled={!allItemsAnswered || isSubmitting}
-                    className="w-full px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 disabled:opacity-50 transition-all"
+                    className="w-full px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                   >
-                    {isSubmitting ? 'Finalizando legajo...' : 'Finalizar legajo'}
+                    {isSubmitting ? 'Finalizando...' : allItemsAnswered ? '✓ Finalizar legajo' : `Completá ${currentProgress.total - currentProgress.answered} pregunta(s) para finalizar`}
                   </button>
-                </div>
+                 </div>
               </>
-            )}
+            ) : route.name === 'preview' && selectedSession ? (
+              <div className="rounded-[28px] border border-slate-200/60 bg-white/60 p-6 text-center text-slate-500">
+                Cargando vista previa...
+              </div>
+            ) : null}
           </>
         ) : (
           <section className="grid grid-cols-1 xl:grid-cols-[0.8fr_1.2fr] gap-6">
             <div className="rounded-[30px] border border-white/70 bg-slate-900 text-white shadow-[0_24px_60px_rgba(15,23,42,0.24)] p-6">
               <div className="flex items-center gap-2">
-                <SlidersHorizontal size={16} className="text-sky-300" />
+                <Settings2 size={16} className="text-sky-300" />
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Configuracion</p>
               </div>
               <h2 className="mt-3 text-2xl font-black">Editor de preguntas</h2>
@@ -1789,7 +1829,7 @@ export default function App() {
             >
               <div className="p-5 sm:p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50">
                 <h2 className="font-black text-slate-800 uppercase tracking-tighter text-lg sm:text-xl">Resumen general del lote</h2>
-                <button onClick={() => setShowPreview(false)} className="p-2 hover:bg-white rounded-full transition-colors">
+                <button onClick={() => selectedSessionId && goLote(selectedSessionId)} className="p-2 hover:bg-white rounded-full transition-colors">
                   <X size={20} className="text-slate-400" />
                 </button>
               </div>
@@ -1897,7 +1937,7 @@ export default function App() {
               </div>
 
               <div className="p-5 sm:p-6 border-t border-gray-100 bg-gray-50 flex flex-col sm:flex-row gap-4">
-                <button onClick={() => setShowPreview(false)} className="flex-1 py-4 font-bold text-slate-500 hover:text-slate-900">
+                <button onClick={() => selectedSessionId && goLote(selectedSessionId)} className="flex-1 py-4 font-bold text-slate-500 hover:text-slate-900">
                   Volver a editar
                 </button>
                 <button

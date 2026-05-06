@@ -17,6 +17,22 @@ const normalizeItemsForCompare = (items: AuditItem[]) =>
     roles: [...(item.roles || [])].map((role) => role.trim()).sort(),
   }));
 
+const sortSessionsByUpdatedAt = (sessions: AuditSession[]) =>
+  [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
+
+const dedupeSessionsById = (sessions: AuditSession[]) => {
+  const byId = new Map<string, AuditSession>();
+
+  sessions.forEach((session) => {
+    const existing = byId.get(session.id);
+    if (!existing || session.updatedAt >= existing.updatedAt) {
+      byId.set(session.id, session);
+    }
+  });
+
+  return sortSessionsByUpdatedAt(Array.from(byId.values()));
+};
+
 const postToWebApp = async (payload: unknown) => {
   if (!WEB_APP_URL) {
     return { success: true, localOnly: true };
@@ -106,13 +122,17 @@ export const saveQuestionsConfig = async (items: AuditItem[]) => {
 
 export const saveSessionsSnapshot = async (sessions: AuditSession[]) => {
   try {
-    const result = await postToWebApp({
-      type: 'sessions_snapshot',
-      payload: {
-        updatedAt: Date.now(),
-        sessions,
-      },
-    });
+    const normalizedSessions = dedupeSessionsById(sessions);
+    const result = await Promise.all(
+      normalizedSessions.map((session) =>
+        postToWebApp({
+          type: 'session_record',
+          payload: {
+            session,
+          },
+        }),
+      ),
+    );
 
     if (!WEB_APP_URL) {
       return result;
@@ -121,8 +141,8 @@ export const saveSessionsSnapshot = async (sessions: AuditSession[]) => {
     await new Promise((resolve) => setTimeout(resolve, 900));
 
     const remoteSessions = await loadSessionsSnapshot();
-    const localSnapshot = JSON.stringify(sessions);
-    const remoteSnapshot = JSON.stringify(remoteSessions || []);
+    const localSnapshot = JSON.stringify(normalizedSessions);
+    const remoteSnapshot = JSON.stringify(dedupeSessionsById(remoteSessions || []));
 
     if (!remoteSessions || localSnapshot !== remoteSnapshot) {
       throw new Error('SESSIONS_SNAPSHOT_NOT_PERSISTED');
@@ -182,7 +202,7 @@ export const loadSessionsSnapshot = async () => {
     const data = await fetchWebAppJson('sessions');
     if (!Array.isArray(data?.sessions)) return null;
 
-    return data.sessions as AuditSession[];
+    return dedupeSessionsById(data.sessions as AuditSession[]);
   } catch (error) {
     console.error('Error loading sessions snapshot:', error);
     return null;
