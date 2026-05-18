@@ -5,6 +5,9 @@ export const isDriveEvidence = (evidence: EvidenceAsset): evidence is Exclude<Ev
 
 export const getEvidencePreviewSrc = (evidence: EvidenceAsset) => {
   if (typeof evidence === 'string') return evidence;
+  if (evidence.fileId) {
+    return `https://drive.google.com/thumbnail?id=${evidence.fileId}&sz=w1200`;
+  }
   return evidence.previewUrl || evidence.url || evidence.openUrl || '';
 };
 
