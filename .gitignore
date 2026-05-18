@@ -2,6 +2,8 @@ node_modules/
 build/
 dist/
 coverage/
+.gh-pages-tmp/
+.gh-pages-deploy/
 .DS_Store
 *.log
 .env*

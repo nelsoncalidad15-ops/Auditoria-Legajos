@@ -101,28 +101,56 @@ function uploadEvidenceToDrive_(payload) {
     name: file.getName(),
     mimeType: file.getMimeType(),
     url: "https://drive.google.com/uc?export=view&id=" + file.getId(),
-    previewUrl: "https://drive.google.com/uc?export=view&id=" + file.getId(),
+    previewUrl: "https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w1200",
     openUrl: file.getUrl(),
     uploadedAt: new Date().getTime()
   };
 }
 
 function ensureAuditHeader_(sheet) {
+  var expectedHeader = [
+    "Fecha",
+    "Sucursal",
+    "Legajo",
+    "Puntajes",
+    "Detalle por item",
+    "Observaciones",
+    "Evidencias",
+    "Resultado Final %",
+    "Admin %",
+    "Pre-Entrega %",
+    "Ventas %",
+    "LegajoId",
+    "AuditoriaId"
+  ];
+
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow([
-      "Fecha",
-      "Sucursal",
-      "Legajo",
-      "Puntajes",
-      "Detalle por item",
-      "Observaciones",
-      "Evidencias",
-      "Resultado Final %",
-      "Admin %",
-      "Pre-Entrega %",
-      "Ventas %"
-    ]);
+    sheet.appendRow(expectedHeader);
+    return;
   }
+
+  var currentHeader = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), expectedHeader.length)).getValues()[0];
+  expectedHeader.forEach(function(label, index) {
+    if (currentHeader[index] !== label) {
+      sheet.getRange(1, index + 1).setValue(label);
+    }
+  });
+}
+
+function findAuditRowByIds_(sheet, legajoId, auditoriaId) {
+  if (!legajoId || !auditoriaId || sheet.getLastRow() <= 1) {
+    return -1;
+  }
+
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(sheet.getLastColumn(), 13)).getValues();
+
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][11] || "") === String(legajoId) && String(values[i][12] || "") === String(auditoriaId)) {
+      return i + 2;
+    }
+  }
+
+  return -1;
 }
 
 function ensureConfigHeader_(sheet) {
@@ -349,7 +377,12 @@ function doPost(e) {
     var preEntregaPercentage = summary.preEntrega != null ? Number(summary.preEntrega) : "";
     var ventasPercentage = summary.ventas != null ? Number(summary.ventas) : "";
 
-    sheet.appendRow([
+    var targetRow = findAuditRowByIds_(sheet, payload.id, payload.auditoriaId);
+    if (targetRow === -1) {
+      targetRow = sheet.getLastRow() + 1;
+    }
+
+    sheet.getRange(targetRow, 1, 1, 13).setValues([[
       new Date(),
       payload.sucursal || "",
       payload.legajoNombre || "",
@@ -360,8 +393,10 @@ function doPost(e) {
       totalPercentage === "" ? "" : totalPercentage.toFixed(2) + "%",
       adminPercentage === "" ? "" : adminPercentage.toFixed(2) + "%",
       preEntregaPercentage === "" ? "" : preEntregaPercentage.toFixed(2) + "%",
-      ventasPercentage === "" ? "" : ventasPercentage.toFixed(2) + "%"
-    ]);
+      ventasPercentage === "" ? "" : ventasPercentage.toFixed(2) + "%",
+      payload.id || "",
+      payload.auditoriaId || ""
+    ]]);
 
     return ContentService
       .createTextOutput(JSON.stringify({ status: "success" }))

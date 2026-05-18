@@ -30,6 +30,7 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
   const isDesvio = score === 0;
   const isPending = score === undefined;
   const hasMultiRoleSelection = !isPending && item.roles.length > 1;
+  const shouldShowRoleSelector = hasMultiRoleSelection && showRoleSelector;
 
   useEffect(() => {
     if (!hasMultiRoleSelection) {
@@ -37,14 +38,22 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
     }
   }, [hasMultiRoleSelection]);
 
-  // Estado visual del número
+  const handleScoreChange = (nextScore: number) => {
+    onChange(nextScore);
+
+    if (item.roles.length > 1) {
+      setShowRoleSelector(true);
+    }
+  };
+
+  // Estado visual del numero
   const numBg = isOk
     ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-100 shadow-sm'
     : isDesvio
       ? 'bg-red-500 text-white border-red-400 shadow-red-100 shadow-sm'
       : 'bg-slate-100 text-slate-400 border-slate-200';
 
-  // Color de la fila completa según estado
+  // Color de la fila completa segun estado
   const rowBg = isOk
     ? 'bg-emerald-50/40 border-l-2 border-l-emerald-400'
     : isDesvio
@@ -61,8 +70,7 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
       <div className="px-4 py-4 sm:px-6 sm:py-5">
         {/* Fila principal */}
         <div className="flex items-center gap-3 sm:gap-4">
-
-          {/* Número con indicador de estado */}
+          {/* Numero con indicador de estado */}
           <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[10px] font-black transition-all duration-200 ${numBg}`}>
             {isOk ? <Check size={13} strokeWidth={3.5} /> : isDesvio ? <X size={13} strokeWidth={3.5} /> : item.id}
           </div>
@@ -89,11 +97,11 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
             )}
           </div>
 
-          {/* Botones OK / DESVÍO + Nota */}
+          {/* Botones OK / DESVIO + Nota */}
           <div className="flex items-center gap-2 shrink-0">
             {/* OK */}
             <button
-              onClick={() => onChange(1)}
+              onClick={() => handleScoreChange(1)}
               title="OK"
               className={`audit-btn flex items-center gap-2 rounded-2xl px-4 py-2.5 text-[12px] font-black uppercase tracking-wide transition-all duration-150 select-none ${
                 isOk
@@ -105,10 +113,10 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
               <span className="hidden sm:inline">OK</span>
             </button>
 
-            {/* DESVÍO */}
+            {/* DESVIO */}
             <button
-              onClick={() => onChange(0)}
-              title="Desvío"
+              onClick={() => handleScoreChange(0)}
+              title="Desvio"
               className={`audit-btn flex items-center gap-2 rounded-2xl px-4 py-2.5 text-[12px] font-black uppercase tracking-wide transition-all duration-150 select-none ${
                 isDesvio
                   ? 'bg-red-500 text-white shadow-lg shadow-red-200 scale-105'
@@ -116,7 +124,7 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
               }`}
             >
               <X size={14} strokeWidth={3} />
-              <span className="hidden sm:inline">Desvío</span>
+              <span className="hidden sm:inline">Desvio</span>
             </button>
 
             {/* Nota */}
@@ -142,27 +150,24 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
         </div>
 
         {hasMultiRoleSelection && (
-          <div className="mt-3 ml-11 flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3">
-            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">
-              Aplica a:
-            </span>
-            <span className="text-[12px] font-bold text-amber-900">
-              {affectedRoles.join(', ')}
-            </span>
-            <button
-              onClick={() => setShowRoleSelector((prev) => !prev)}
-              className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-amber-700 transition-all hover:border-amber-400 hover:bg-amber-100"
-            >
-              {showRoleSelector ? 'Ocultar' : 'Cambiar'}
-            </button>
-          </div>
-        )}
+          <div className="mt-3 ml-11 space-y-3">
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3">
+              <span className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">
+                Aplica a:
+              </span>
+              <span className="text-[12px] font-bold text-amber-900">
+                {affectedRoles.join(', ')}
+              </span>
+              <button
+                onClick={() => setShowRoleSelector((prev) => !prev)}
+                className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-amber-700 transition-all hover:border-amber-400 hover:bg-amber-100"
+              >
+                {showRoleSelector ? 'Ocultar' : 'Cambiar'}
+              </button>
+            </div>
 
-        {/* Panel desplegable */}
-        {showDetails && (
-          <div className="mt-4 ml-11 grid gap-3 sm:grid-cols-2 animate-in fade-in slide-in-from-top-2 duration-200">
-            {hasMultiRoleSelection && showRoleSelector && (
-              <div className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
+            {shouldShowRoleSelector && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
                 <label className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">
                   Esta respuesta aplica a
                 </label>
@@ -194,15 +199,20 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
                   })}
                 </div>
                 <p className="mt-2 text-[11px] text-amber-800">
-                  Por defecto cuenta para todos los sectores vinculados. Acá podés dejarla solo en el sector que corresponda.
+                  Por defecto cuenta para todos los sectores vinculados. Aca podes dejarla solo en el sector que corresponda.
                 </p>
               </div>
             )}
+          </div>
+        )}
 
+        {/* Panel desplegable */}
+        {showDetails && (
+          <div className="mt-4 ml-11 grid gap-3 sm:grid-cols-2 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
               <label className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
                 <MessageSquareText size={11} />
-                Observación
+                Observacion
               </label>
               <textarea
                 value={detail.comentario}
