@@ -253,6 +253,11 @@ function doPost(e) {
     var totalPoints = scoresValues.length;
     var achievedPoints = scoresValues.reduce(function(a, b) { return a + b; }, 0);
     var percentage = totalPoints > 0 ? (achievedPoints / totalPoints) * 100 : 0;
+    var summary = payload.summary || {};
+    var totalPercentage = summary.total != null ? Number(summary.total) : percentage;
+    var adminPercentage = summary.admin != null ? Number(summary.admin) : "";
+    var preEntregaPercentage = summary.preEntrega != null ? Number(summary.preEntrega) : "";
+    var ventasPercentage = summary.ventas != null ? Number(summary.ventas) : "";
 
     sheet.appendRow([
       new Date(),
@@ -262,10 +267,10 @@ function doPost(e) {
       JSON.stringify(payload.itemDetails || {}),
       payload.observaciones || "",
       (payload.evidencias || []).length + " img",
-      percentage.toFixed(2) + "%",
-      "",
-      "",
-      ""
+      totalPercentage === "" ? "" : totalPercentage.toFixed(2) + "%",
+      adminPercentage === "" ? "" : adminPercentage.toFixed(2) + "%",
+      preEntregaPercentage === "" ? "" : preEntregaPercentage.toFixed(2) + "%",
+      ventasPercentage === "" ? "" : ventasPercentage.toFixed(2) + "%"
     ]);
 
     return ContentService

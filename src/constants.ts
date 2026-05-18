@@ -1,4 +1,4 @@
-import { AuditItem } from './types';
+import { AuditItem, AuditItemDetail } from './types';
 
 export const AUDIT_ITEMS: AuditItem[] = [
   {
@@ -117,20 +117,53 @@ export const AUDIT_ITEMS: AuditItem[] = [
   }
 ];
 
-export const calculateSummary = (scores: Record<number, number>, items: AuditItem[]) => {
-  const getAverage = (roleFilter?: string) => {
-    const relevantItems = roleFilter 
-      ? items.filter(item => item.roles.includes(roleFilter))
-      : items;
-    
-    if (relevantItems.length === 0) return 0;
+const normalizeRole = (role: string) => role.trim().toLowerCase();
 
-    const answeredScores = relevantItems
-      .map(item => scores[item.id])
-      .filter(s => s !== undefined);
+export const getAffectedRolesForScore = (
+  item: AuditItem,
+  score: number | undefined,
+  detail?: AuditItemDetail,
+) => {
+  if (score !== 0) {
+    return item.roles;
+  }
+
+  const configuredRoles = (detail?.affectedRoles || []).filter((role) =>
+    item.roles.some((itemRole) => normalizeRole(itemRole) === normalizeRole(role)),
+  );
+
+  return configuredRoles.length > 0 ? configuredRoles : item.roles;
+};
+
+export const calculateSummary = (
+  scores: Record<number, number>,
+  items: AuditItem[],
+  itemDetails: Record<number, AuditItemDetail> = {},
+) => {
+  const getAverage = (roleFilter?: string) => {
+    const answeredScores = items.flatMap((item) => {
+      const score = scores[item.id];
+      if (score === undefined) return [];
+
+      if (!roleFilter) {
+        return [score];
+      }
+
+      const itemHasRole = item.roles.some((role) => normalizeRole(role) === normalizeRole(roleFilter));
+      if (!itemHasRole) return [];
+
+      if (score === 1) {
+        return [score];
+      }
+
+      const affectedRoles = getAffectedRolesForScore(item, score, itemDetails[item.id]);
+      const appliesToRole = affectedRoles.some((role) => normalizeRole(role) === normalizeRole(roleFilter));
+
+      return appliesToRole ? [score] : [];
+    });
 
     if (answeredScores.length === 0) return 0;
-    
+
     return (answeredScores.reduce((a, b) => a + b, 0) / answeredScores.length) * 100;
   };
 

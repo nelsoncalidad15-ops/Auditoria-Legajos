@@ -12,6 +12,7 @@ export type LegajoStatus = 'pendiente' | 'en_proceso' | 'finalizado';
 export interface AuditItemDetail {
   comentario: string;
   evidencias: string[];
+  affectedRoles?: string[];
 }
 
 export interface LegajoRecord {
@@ -54,6 +55,7 @@ export interface AuditData {
   evidencias: string[]; // base64 images
   observaciones: string;
   conclusiones: string;
+  summary?: AuditSummary;
 }
 
 export interface AuditSummary {

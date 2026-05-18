@@ -26,11 +26,11 @@ import {
   Zap,
 } from 'lucide-react';
 import { useHashRouter } from './hooks/useHashRouter';
-import { AUDIT_ITEMS, calculateSummary } from './constants';
+import { AUDIT_ITEMS, calculateSummary, getAffectedRolesForScore } from './constants';
 import { AuditData, AuditItem, AuditItemDetail, AuditSession, BranchName, LegajoRecord, LegajoStatus } from './types';
 import { AuditRow } from './components/AuditRow';
 import { SummaryChart } from './components/SummaryChart';
-import { FormacionDashboard } from './components/FormacionDashboard';
+
 import {
   hasGoogleSheetsConfig,
   loadSessionsSnapshot,
@@ -59,6 +59,7 @@ const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 const createEmptyItemDetail = (): AuditItemDetail => ({
   comentario: '',
   evidencias: [],
+  affectedRoles: [],
 });
 
 const createEmptyLegajo = (nombre: string): LegajoRecord => ({
@@ -73,6 +74,16 @@ const createEmptyLegajo = (nombre: string): LegajoRecord => ({
   observaciones: '',
   conclusiones: '',
 });
+
+const normalizeRole = (role: string) => role.trim().toLowerCase();
+
+const itemImpactsRole = (item: AuditItem, legajo: LegajoRecord, role: string) => {
+  if (legajo.scores[item.id] !== 0) return false;
+
+  return getAffectedRolesForScore(item, legajo.scores[item.id], legajo.itemDetails[item.id]).some(
+    (affectedRole) => normalizeRole(affectedRole) === normalizeRole(role),
+  );
+};
 
 const sortSessionsByUpdatedAt = (sessions: AuditSession[]) =>
   [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -235,14 +246,14 @@ export default function App() {
     if (!selectedLegajo) {
       return { total: 0, admin: 0, preEntrega: 0, ventas: 0 };
     }
-    return calculateSummary(selectedLegajo.scores, items);
+    return calculateSummary(selectedLegajo.scores, items, selectedLegajo.itemDetails);
   }, [selectedLegajo, items]);
 
   const sessionLegajosWithSummary = useMemo(() => {
     if (!selectedSession) return [];
     return selectedSession.legajos.map((legajo) => ({
       ...legajo,
-      summary: calculateSummary(legajo.scores, items),
+      summary: calculateSummary(legajo.scores, items, legajo.itemDetails),
       answered: items.filter((item) => legajo.scores[item.id] !== undefined).length,
       desvioItems: items.filter((item) => legajo.scores[item.id] === 0),
       commentedItems: (Object.values(legajo.itemDetails) as AuditItemDetail[]).filter((detail) => detail.comentario.trim() || detail.evidencias.length > 0).length,
@@ -304,7 +315,7 @@ export default function App() {
             .filter((legajo) => legajo.status === 'finalizado')
             .map((legajo) => ({
               nombre: legajo.nombre,
-              total: calculateSummary(legajo.scores, items).total,
+              total: calculateSummary(legajo.scores, items, legajo.itemDetails).total,
               updatedAt: legajo.updatedAt,
             })),
         )
@@ -329,7 +340,7 @@ export default function App() {
     const enProceso = featuredSession.legajos.filter((legajo) => legajo.status === 'en_proceso').length;
     const total = featuredSession.legajos.length;
     const average = total > 0
-      ? featuredSession.legajos.reduce((acc, legajo) => acc + calculateSummary(legajo.scores, items).total, 0) / total
+      ? featuredSession.legajos.reduce((acc, legajo) => acc + calculateSummary(legajo.scores, items, legajo.itemDetails).total, 0) / total
       : 0;
 
     return {
@@ -493,6 +504,7 @@ export default function App() {
     if (!selectedSession || !selectedLegajo) return;
 
     setIsSubmitting(true);
+    const legajoSummary = calculateSummary(selectedLegajo.scores, items, selectedLegajo.itemDetails);
 
     const data: AuditData = {
       id: selectedLegajo.id,
@@ -508,6 +520,7 @@ export default function App() {
       evidencias: selectedLegajo.evidencias,
       observaciones: selectedLegajo.observaciones,
       conclusiones: selectedLegajo.conclusiones,
+      summary: legajoSummary,
     };
 
     try {
@@ -616,9 +629,6 @@ export default function App() {
     };
 
     const formatDate = (value: number) => new Date(value).toLocaleDateString('es-AR');
-    const normalizeRole = (role: string) => role.trim().toLowerCase();
-    const itemMatchesRole = (item: AuditItem, keyword: string) =>
-      item.roles.some((role) => normalizeRole(role).includes(keyword));
     const lotTone = getPerformanceTone(sessionAggregateSummary.total);
 
     const drawRoundedPanel = (
@@ -843,15 +853,15 @@ export default function App() {
     };
 
     const adminDeviationCount = sessionLegajosWithSummary.reduce(
-      (acc, legajo) => acc + legajo.desvioItems.filter((item) => itemMatchesRole(item, 'admin')).length,
+      (acc, legajo) => acc + legajo.desvioItems.filter((item) => itemImpactsRole(item, legajo, 'Admin')).length,
       0,
     );
     const preEntregaDeviationCount = sessionLegajosWithSummary.reduce(
-      (acc, legajo) => acc + legajo.desvioItems.filter((item) => itemMatchesRole(item, 'pre')).length,
+      (acc, legajo) => acc + legajo.desvioItems.filter((item) => itemImpactsRole(item, legajo, 'Pre-Entrega')).length,
       0,
     );
     const ventasDeviationCount = sessionLegajosWithSummary.reduce(
-      (acc, legajo) => acc + legajo.desvioItems.filter((item) => itemMatchesRole(item, 'venta')).length,
+      (acc, legajo) => acc + legajo.desvioItems.filter((item) => itemImpactsRole(item, legajo, 'Ventas')).length,
       0,
     );
 
@@ -1135,10 +1145,7 @@ export default function App() {
               <Home size={13} className="inline mr-1 -mt-0.5" />
               Inicio
             </a>
-            <a href="#/formacion" className={`rounded-full px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] transition-all ${route.name === 'formacion' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white/70 text-slate-500 border border-slate-200 hover:border-slate-300'}`}>
-              <ClipboardList size={13} className="inline mr-1 -mt-0.5" />
-              Formación
-            </a>
+
             <a href="#/preguntas" className={`rounded-full px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] transition-all ${route.name === 'preguntas' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white/70 text-slate-500 border border-slate-200 hover:border-slate-300'}`}>
               <Settings2 size={13} className="inline mr-1 -mt-0.5" />
               Preguntas
@@ -1168,9 +1175,7 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto px-3 sm:px-4 pt-6 sm:pt-8 space-y-6">
-        {route.name === 'formacion' ? (
-          <FormacionDashboard />
-        ) : route.name !== 'preguntas' ? (
+        {route.name !== 'preguntas' ? (
           <>
             {syncMessage && (
               <section className="max-w-6xl mx-auto">
@@ -1498,7 +1503,7 @@ export default function App() {
                       <div className="p-6 text-sm text-slate-500">Todavía no cargaste legajos en esta auditoría.</div>
                     ) : (
                       selectedSession.legajos.map((legajo) => {
-                        const legajoSummary = calculateSummary(legajo.scores, items);
+                        const legajoSummary = calculateSummary(legajo.scores, items, legajo.itemDetails);
                         return (
                           <div key={legajo.id} className="p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                             <div className="flex-1 w-full lg:max-w-2xl">
@@ -1622,12 +1627,23 @@ export default function App() {
                         score={selectedLegajo.scores[item.id]}
                         detail={selectedLegajo.itemDetails[item.id] ?? createEmptyItemDetail()}
                         onChange={(score) => {
-                          updateLegajo(selectedLegajo.id, (legajo) => ({
-                            ...legajo,
-                            status: 'en_proceso',
-                            updatedAt: Date.now(),
-                            scores: { ...legajo.scores, [item.id]: score },
-                          }));
+                          updateLegajo(selectedLegajo.id, (legajo) => {
+                            const currentDetail = legajo.itemDetails[item.id] ?? createEmptyItemDetail();
+
+                            return {
+                              ...legajo,
+                              status: 'en_proceso',
+                              updatedAt: Date.now(),
+                              scores: { ...legajo.scores, [item.id]: score },
+                              itemDetails: {
+                                ...legajo.itemDetails,
+                                [item.id]: {
+                                  ...currentDetail,
+                                  affectedRoles: score === 0 ? getAffectedRolesForScore(item, score, currentDetail) : [],
+                                },
+                              },
+                            };
+                          });
                           moveToNextAuditItem(item.id);
                         }}
                         onDetailChange={(detail) =>

@@ -5,15 +5,14 @@ export type Route =
   | { name: 'preguntas' }
   | { name: 'lote'; sessionId: string }
   | { name: 'legajo'; sessionId: string; legajoId: string }
-  | { name: 'preview'; sessionId: string }
-  | { name: 'formacion' };
+  | { name: 'preview'; sessionId: string };
 
 function parseHash(hash: string): Route {
   const path = hash.replace(/^#/, '').replace(/^\//, '') || '';
   const parts = path.split('/');
 
   if (parts[0] === 'preguntas') return { name: 'preguntas' };
-  if (parts[0] === 'formacion') return { name: 'formacion' };
+
   if (parts[0] === 'lote' && parts[1]) {
     if (parts[2] === 'legajo' && parts[3]) {
       return { name: 'legajo', sessionId: parts[1], legajoId: parts[3] };
@@ -41,7 +40,7 @@ export function useHashRouter() {
 
   const goHome = useCallback(() => navigate('/'), [navigate]);
   const goPreguntas = useCallback(() => navigate('/preguntas'), [navigate]);
-  const goFormacion = useCallback(() => navigate('/formacion'), [navigate]);
+
   const goLote = useCallback((sessionId: string) => navigate(`/lote/${sessionId}`), [navigate]);
   const goLegajo = useCallback(
     (sessionId: string, legajoId: string) => navigate(`/lote/${sessionId}/legajo/${legajoId}`),
@@ -53,5 +52,5 @@ export function useHashRouter() {
   );
   const goBack = useCallback(() => window.history.back(), []);
 
-  return { route, navigate, goHome, goPreguntas, goFormacion, goLote, goLegajo, goPreview, goBack };
+  return { route, navigate, goHome, goPreguntas, goLote, goLegajo, goPreview, goBack };
 }

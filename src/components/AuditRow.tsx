@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AuditItem, AuditItemDetail } from '../types';
 import { Check, MessageSquareText, Paperclip, X } from 'lucide-react';
 import { EvidenceUpload } from './EvidenceUpload';
+import { getAffectedRolesForScore } from '../constants';
 
 interface Props {
   item: AuditItem;
@@ -13,6 +14,7 @@ interface Props {
 
 export const AuditRow: React.FC<Props> = ({ item, score, detail, onChange, onDetailChange }) => {
   const [showDetails, setShowDetails] = useState(false);
+  const affectedRoles = useMemo(() => getAffectedRolesForScore(item, score, detail), [detail, item, score]);
 
   const detailCount = useMemo(() => {
     let count = 0;
@@ -24,6 +26,12 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, onChange, onDet
   const isOk = score === 1;
   const isDesvio = score === 0;
   const isPending = score === undefined;
+
+  useEffect(() => {
+    if (isDesvio && item.roles.length > 1) {
+      setShowDetails(true);
+    }
+  }, [isDesvio, item.roles.length]);
 
   // Estado visual del número
   const numBg = isOk
@@ -132,6 +140,44 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, onChange, onDet
         {/* Panel desplegable */}
         {showDetails && (
           <div className="mt-4 ml-11 grid gap-3 sm:grid-cols-2 animate-in fade-in slide-in-from-top-2 duration-200">
+            {isDesvio && item.roles.length > 1 && (
+              <div className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
+                <label className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">
+                  Este desvio impacta en
+                </label>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {item.roles.map((role) => {
+                    const isActive = affectedRoles.includes(role);
+                    const nextRoles = isActive
+                      ? affectedRoles.filter((currentRole) => currentRole !== role)
+                      : [...affectedRoles, role];
+
+                    return (
+                      <button
+                        key={role}
+                        onClick={() =>
+                          onDetailChange({
+                            ...detail,
+                            affectedRoles: nextRoles.length > 0 ? nextRoles : [role],
+                          })
+                        }
+                        className={`rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-all ${
+                          isActive
+                            ? 'border-amber-500 bg-amber-500 text-white'
+                            : 'border-amber-200 bg-white text-amber-700'
+                        }`}
+                      >
+                        {role}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-[11px] text-amber-800">
+                  Por defecto afecta a todos los sectores vinculados. Acá podés dejarlo solo en el sector que corresponda.
+                </p>
+              </div>
+            )}
+
             <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
               <label className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
                 <MessageSquareText size={11} />

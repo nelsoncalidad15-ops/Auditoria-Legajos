@@ -10,19 +10,28 @@ interface Props {
 }
 
 export const EvidenceUpload: React.FC<Props> = ({ evidencias, onChange, compact = false, buttonLabel = 'Click / Foto' }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
+      const nextImages: string[] = [];
+
       Array.from(files).forEach((file: File) => {
         const reader = new FileReader();
         reader.onloadend = () => {
-          onChange([...evidencias, reader.result as string]);
+          nextImages.push(reader.result as string);
+
+          if (nextImages.length === files.length) {
+            onChange([...evidencias, ...nextImages]);
+          }
         };
         reader.readAsDataURL(file);
       });
     }
+
+    e.target.value = '';
   };
 
   const removeImage = (index: number) => {
@@ -43,22 +52,39 @@ export const EvidenceUpload: React.FC<Props> = ({ evidencias, onChange, compact 
             </button>
           </div>
         ))}
-        
+
         <button
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => cameraInputRef.current?.click()}
           className={`aspect-square rounded-2xl border-2 border-dashed border-slate-300 bg-slate-100/40 flex flex-col items-center justify-center gap-1 text-slate-400 hover:border-indigo-400 hover:text-indigo-400 hover:bg-white/60 transition-all cursor-pointer ${compact ? 'min-h-20' : ''}`}
         >
           <Camera size={24} strokeWidth={1.5} />
           <span className="text-[9px] font-black uppercase tracking-tighter">{buttonLabel}</span>
         </button>
+
+        <button
+          onClick={() => galleryInputRef.current?.click()}
+          className={`aspect-square rounded-2xl border-2 border-dashed border-slate-300 bg-slate-100/40 flex flex-col items-center justify-center gap-1 text-slate-400 hover:border-sky-400 hover:text-sky-500 hover:bg-white/60 transition-all cursor-pointer ${compact ? 'min-h-20' : ''}`}
+        >
+          <ImageIcon size={24} strokeWidth={1.5} />
+          <span className="text-[9px] font-black uppercase tracking-tighter">Galeria</span>
+        </button>
       </div>
-      
+
       <input
-        ref={fileInputRef}
+        ref={cameraInputRef}
         type="file"
         multiple
         accept="image/*"
         capture="environment"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
+      <input
+        ref={galleryInputRef}
+        type="file"
+        multiple
+        accept="image/*"
         className="hidden"
         onChange={handleFileChange}
       />
