@@ -18,6 +18,8 @@ export const EvidenceUpload: React.FC<Props> = ({ evidencias, onChange, uploadCo
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [failedPreviews, setFailedPreviews] = useState<Record<number, boolean>>({});
+  const [selectedPreview, setSelectedPreview] = useState<EvidenceAsset | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -46,6 +48,8 @@ export const EvidenceUpload: React.FC<Props> = ({ evidencias, onChange, uploadCo
   };
 
   const removeImage = (index: number) => {
+    const shouldRemove = window.confirm('¿Querés quitar esta evidencia del legajo?');
+    if (!shouldRemove) return;
     onChange(evidencias.filter((_, i) => i !== index));
   };
 
@@ -54,7 +58,26 @@ export const EvidenceUpload: React.FC<Props> = ({ evidencias, onChange, uploadCo
       <div className={`grid gap-3 ${compact ? 'grid-cols-3 sm:grid-cols-4' : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6'}`}>
         {evidencias.map((src, index) => (
           <div key={index} className="relative aspect-square rounded-2xl overflow-hidden group border border-white/60 shadow-sm transition-transform hover:scale-105">
-            <img src={getEvidencePreviewSrc(src)} alt={getEvidenceLabel(src, index)} className="w-full h-full object-cover" />
+            <button
+              type="button"
+              onClick={() => setSelectedPreview(src)}
+              className="h-full w-full"
+              title="Abrir evidencia"
+            >
+              {failedPreviews[index] ? (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-slate-100 px-3 text-center">
+                  <ImageIcon size={20} className="text-slate-400" />
+                  <span className="text-[10px] font-bold text-slate-500">Vista previa no disponible</span>
+                </div>
+              ) : (
+                <img
+                  src={getEvidencePreviewSrc(src)}
+                  alt={getEvidenceLabel(src, index)}
+                  className="w-full h-full object-cover"
+                  onError={() => setFailedPreviews((current) => ({ ...current, [index]: true }))}
+                />
+              )}
+            </button>
             {isDriveEvidence(src) && getEvidenceOpenUrl(src) && (
               <a
                 href={getEvidenceOpenUrl(src)}
@@ -66,8 +89,13 @@ export const EvidenceUpload: React.FC<Props> = ({ evidencias, onChange, uploadCo
               </a>
             )}
             <button
-              onClick={() => removeImage(index)}
-              className="absolute top-1 right-1 p-1.5 bg-red-500 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                removeImage(index);
+              }}
+              className="absolute top-1 right-1 p-1.5 bg-red-500 text-white rounded-lg opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-lg"
+              title="Quitar evidencia"
             >
               <X size={12} strokeWidth={4} />
             </button>
@@ -119,6 +147,51 @@ export const EvidenceUpload: React.FC<Props> = ({ evidencias, onChange, uploadCo
         className="hidden"
         onChange={handleFileChange}
       />
+
+      {selectedPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
+          onClick={() => setSelectedPreview(null)}
+        >
+          <div
+            className="relative max-h-[90vh] max-w-[90vw] overflow-hidden rounded-3xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setSelectedPreview(null)}
+              className="absolute right-3 top-3 z-10 rounded-full bg-slate-900/80 p-2 text-white"
+              title="Cerrar"
+            >
+              <X size={16} />
+            </button>
+
+            {typeof selectedPreview === 'string' ? (
+              <img
+                src={selectedPreview}
+                alt="Vista previa de evidencia"
+                className="max-h-[90vh] max-w-[90vw] object-contain"
+              />
+            ) : (
+              <div className="flex min-h-[280px] w-[min(90vw,720px)] flex-col items-center justify-center gap-4 p-8 text-center">
+                <ImageIcon size={34} className="text-slate-400" />
+                <div>
+                  <p className="text-sm font-black text-slate-900">{selectedPreview.name}</p>
+                  <p className="mt-1 text-xs text-slate-500">La evidencia está guardada en Drive.</p>
+                </div>
+                <a
+                  href={getEvidenceOpenUrl(selectedPreview)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-black text-white"
+                >
+                  Abrir en Drive
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
