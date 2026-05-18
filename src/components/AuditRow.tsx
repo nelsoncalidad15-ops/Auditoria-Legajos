@@ -16,6 +16,7 @@ interface Props {
 
 export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, onChange, onDetailChange }) => {
   const [showDetails, setShowDetails] = useState(false);
+  const [showRoleSelector, setShowRoleSelector] = useState(false);
   const affectedRoles = useMemo(() => getAffectedRolesForScore(item, score, detail), [detail, item, score]);
 
   const detailCount = useMemo(() => {
@@ -31,8 +32,8 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
   const hasMultiRoleSelection = !isPending && item.roles.length > 1;
 
   useEffect(() => {
-    if (hasMultiRoleSelection) {
-      setShowDetails(true);
+    if (!hasMultiRoleSelection) {
+      setShowRoleSelector(false);
     }
   }, [hasMultiRoleSelection]);
 
@@ -140,10 +141,27 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
           </div>
         </div>
 
+        {hasMultiRoleSelection && (
+          <div className="mt-3 ml-11 flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3">
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">
+              Aplica a:
+            </span>
+            <span className="text-[12px] font-bold text-amber-900">
+              {affectedRoles.join(', ')}
+            </span>
+            <button
+              onClick={() => setShowRoleSelector((prev) => !prev)}
+              className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-amber-700 transition-all hover:border-amber-400 hover:bg-amber-100"
+            >
+              {showRoleSelector ? 'Ocultar' : 'Cambiar'}
+            </button>
+          </div>
+        )}
+
         {/* Panel desplegable */}
         {showDetails && (
           <div className="mt-4 ml-11 grid gap-3 sm:grid-cols-2 animate-in fade-in slide-in-from-top-2 duration-200">
-            {hasMultiRoleSelection && (
+            {hasMultiRoleSelection && showRoleSelector && (
               <div className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
                 <label className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">
                   Esta respuesta aplica a
