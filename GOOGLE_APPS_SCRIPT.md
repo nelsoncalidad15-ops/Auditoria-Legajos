@@ -15,6 +15,9 @@ En su archivo de Google Sheets cree estas hojas:
 ## 2. Pegue este codigo en Apps Script
 
 ```javascript
+var DRIVE_ROOT_FOLDER_ID = "";
+var DRIVE_ROOT_FOLDER_NAME = "Audit Legajos Evidencias";
+
 function getSheetByName_(name) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(name);
@@ -22,6 +25,86 @@ function getSheetByName_(name) {
     sheet = ss.insertSheet(name);
   }
   return sheet;
+}
+
+function sanitizeDriveName_(value) {
+  return String(value || "Sin dato")
+    .replace(/[\\/:*?"<>|#%&{}$!'@+=`]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+function getDriveRootFolder_() {
+  if (DRIVE_ROOT_FOLDER_ID) {
+    return DriveApp.getFolderById(DRIVE_ROOT_FOLDER_ID);
+  }
+
+  var folders = DriveApp.getFoldersByName(DRIVE_ROOT_FOLDER_NAME);
+  if (folders.hasNext()) {
+    return folders.next();
+  }
+
+  return DriveApp.createFolder(DRIVE_ROOT_FOLDER_NAME);
+}
+
+function getOrCreateChildFolder_(parent, name) {
+  var safeName = sanitizeDriveName_(name);
+  var folders = parent.getFoldersByName(safeName);
+  if (folders.hasNext()) {
+    return folders.next();
+  }
+  return parent.createFolder(safeName);
+}
+
+function buildEvidenceFileName_(payload) {
+  var extByMime = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/heic": ".heic",
+    "image/heif": ".heif"
+  };
+
+  var extension = extByMime[payload.mimeType] || "";
+  var parts = [
+    sanitizeDriveName_(payload.legajoNombre || "Legajo"),
+    payload.itemId ? "Item-" + payload.itemId : "General",
+    sanitizeDriveName_(payload.itemRequisito || "Evidencia"),
+    new Date().getTime()
+  ];
+
+  return parts.join("_") + extension;
+}
+
+function uploadEvidenceToDrive_(payload) {
+  if (!payload || !payload.dataBase64) {
+    throw new Error("EVIDENCE_DATA_REQUIRED");
+  }
+
+  var rootFolder = getDriveRootFolder_();
+  var auditFolderName = [
+    sanitizeDriveName_(payload.sucursal || "Sucursal"),
+    sanitizeDriveName_(payload.auditoriaNombre || "Auditoria"),
+    sanitizeDriveName_(payload.auditoriaId || "sin-id")
+  ].join(" - ");
+  var auditFolder = getOrCreateChildFolder_(rootFolder, auditFolderName);
+
+  var bytes = Utilities.base64Decode(payload.dataBase64);
+  var blob = Utilities.newBlob(bytes, payload.mimeType || "application/octet-stream", buildEvidenceFileName_(payload));
+  var file = auditFolder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  return {
+    kind: "drive",
+    fileId: file.getId(),
+    name: file.getName(),
+    mimeType: file.getMimeType(),
+    url: "https://drive.google.com/uc?export=view&id=" + file.getId(),
+    previewUrl: "https://drive.google.com/uc?export=view&id=" + file.getId(),
+    openUrl: file.getUrl(),
+    uploadedAt: new Date().getTime()
+  };
 }
 
 function ensureAuditHeader_(sheet) {
@@ -243,6 +326,13 @@ function doPost(e) {
       saveSessionRecord_(payload.session || {});
       return ContentService
         .createTextOutput(JSON.stringify({ status: "success" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (type === "upload_evidence") {
+      var evidence = uploadEvidenceToDrive_(payload);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: "success", evidence: evidence }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 

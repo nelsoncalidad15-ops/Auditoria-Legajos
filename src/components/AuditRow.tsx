@@ -3,16 +3,18 @@ import { AuditItem, AuditItemDetail } from '../types';
 import { Check, MessageSquareText, Paperclip, X } from 'lucide-react';
 import { EvidenceUpload } from './EvidenceUpload';
 import { getAffectedRolesForScore } from '../constants';
+import { EvidenceUploadContext } from '../services/googleSheetsService';
 
 interface Props {
   item: AuditItem;
   score: number | undefined;
   detail: AuditItemDetail;
+  uploadContext: EvidenceUploadContext;
   onChange: (score: number) => void;
   onDetailChange: (detail: AuditItemDetail) => void;
 }
 
-export const AuditRow: React.FC<Props> = ({ item, score, detail, onChange, onDetailChange }) => {
+export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, onChange, onDetailChange }) => {
   const [showDetails, setShowDetails] = useState(false);
   const affectedRoles = useMemo(() => getAffectedRolesForScore(item, score, detail), [detail, item, score]);
 
@@ -208,6 +210,7 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, onChange, onDet
               <EvidenceUpload
                 evidencias={detail.evidencias}
                 onChange={(evidencias) => onDetailChange({ ...detail, evidencias })}
+                uploadContext={uploadContext}
                 compact
                 buttonLabel="Agregar foto"
               />

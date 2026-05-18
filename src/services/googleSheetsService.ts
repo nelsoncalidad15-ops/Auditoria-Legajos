@@ -1,4 +1,4 @@
-import { AuditData, AuditItem, AuditSession } from '../types';
+import { AuditData, AuditItem, AuditSession, EvidenceAsset } from '../types';
 
 const WEB_APP_URL = import.meta.env.VITE_GOOGLE_APPS_SCRIPT_URL?.trim() || '';
 
@@ -87,6 +87,57 @@ export const saveToSheets = async (data: AuditData) => {
     console.error('Error saving audit:', error);
     throw error;
   }
+};
+
+const fileToBase64 = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error || new Error('FILE_READ_ERROR'));
+    reader.readAsDataURL(file);
+  });
+
+export interface EvidenceUploadContext {
+  auditoriaId?: string;
+  auditoriaNombre?: string;
+  sucursal?: string;
+  legajoId?: string;
+  legajoNombre?: string;
+  itemId?: number;
+  itemRequisito?: string;
+}
+
+export const uploadEvidence = async (file: File, context: EvidenceUploadContext): Promise<EvidenceAsset> => {
+  if (!WEB_APP_URL) {
+    const reader = new FileReader();
+    return await new Promise<string>((resolve, reject) => {
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error || new Error('FILE_READ_ERROR'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  const dataBase64 = await fileToBase64(file);
+  const response = await postToWebApp({
+    type: 'upload_evidence',
+    payload: {
+      fileName: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      dataBase64,
+      sizeBytes: file.size,
+      ...context,
+    },
+  });
+
+  if (!response || typeof response !== 'object' || !(response as { evidence?: unknown }).evidence) {
+    throw new Error('EVIDENCE_UPLOAD_INVALID_RESPONSE');
+  }
+
+  return (response as { evidence: EvidenceAsset }).evidence;
 };
 
 export const saveQuestionsConfig = async (items: AuditItem[]) => {

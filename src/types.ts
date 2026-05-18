@@ -9,9 +9,22 @@ export interface AuditItem {
 export type BranchName = 'Jujuy' | 'Salta';
 export type LegajoStatus = 'pendiente' | 'en_proceso' | 'finalizado';
 
+export interface DriveEvidenceAsset {
+  kind: 'drive';
+  fileId: string;
+  name: string;
+  mimeType?: string;
+  url: string;
+  previewUrl?: string;
+  openUrl?: string;
+  uploadedAt?: number;
+}
+
+export type EvidenceAsset = string | DriveEvidenceAsset;
+
 export interface AuditItemDetail {
   comentario: string;
-  evidencias: string[];
+  evidencias: EvidenceAsset[];
   affectedRoles?: string[];
 }
 
@@ -24,7 +37,7 @@ export interface LegajoRecord {
   finalizedAt?: number;
   scores: Record<number, number>;
   itemDetails: Record<number, AuditItemDetail>;
-  evidencias: string[];
+  evidencias: EvidenceAsset[];
   observaciones: string;
   conclusiones: string;
 }
@@ -52,7 +65,7 @@ export interface AuditData {
   legajoEstado?: 'pendiente' | 'en_proceso' | 'finalizado';
   scores: Record<number, number>; // itemId: score (0 or 1)
   itemDetails: Record<number, AuditItemDetail>;
-  evidencias: string[]; // base64 images
+  evidencias: EvidenceAsset[];
   observaciones: string;
   conclusiones: string;
   summary?: AuditSummary;

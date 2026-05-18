@@ -30,6 +30,7 @@ import { AUDIT_ITEMS, calculateSummary, getAffectedRolesForScore } from './const
 import { AuditData, AuditItem, AuditItemDetail, AuditSession, BranchName, LegajoRecord, LegajoStatus } from './types';
 import { AuditRow } from './components/AuditRow';
 import { SummaryChart } from './components/SummaryChart';
+import { getEvidenceOpenUrl, getEvidencePreviewSrc, isDriveEvidence } from './utils/evidence';
 
 import {
   hasGoogleSheetsConfig,
@@ -589,20 +590,24 @@ export default function App() {
         const detail = legajo.itemDetails[item.id];
         const evidencias = detail?.evidencias || [];
 
-        return evidencias.map((src, evidenceIndex) => ({
+        return evidencias.map((evidence, evidenceIndex) => ({
           legajo: legajo.nombre,
           requisito: item.requisito,
           comentario: detail?.comentario?.trim() || '',
-          src,
+          src: getEvidencePreviewSrc(evidence),
+          openUrl: getEvidenceOpenUrl(evidence),
+          isExternal: isDriveEvidence(evidence),
           evidenceIndex,
         }));
       });
 
-      const generalEvidenceEntries = (legajo.evidencias || []).map((src, evidenceIndex) => ({
+      const generalEvidenceEntries = (legajo.evidencias || []).map((evidence, evidenceIndex) => ({
         legajo: legajo.nombre,
         requisito: 'Evidencia general',
         comentario: legajo.observaciones?.trim() || '',
-        src,
+        src: getEvidencePreviewSrc(evidence),
+        openUrl: getEvidenceOpenUrl(evidence),
+        isExternal: isDriveEvidence(evidence),
         evidenceIndex,
       }));
 
@@ -734,17 +739,28 @@ export default function App() {
         const imageY = cardY + 14;
 
         try {
-          const format = entry.src.startsWith('data:image/png') ? 'PNG' : 'JPEG';
-          (doc as unknown as { addImage: (...args: unknown[]) => void }).addImage(
-            entry.src,
-            format,
-            cardX + 4,
-            imageY,
-            cardWidth - 8,
-            imageHeight,
-            undefined,
-            'FAST',
-          );
+          if (entry.src.startsWith('data:image/')) {
+            const format = entry.src.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+            (doc as unknown as { addImage: (...args: unknown[]) => void }).addImage(
+              entry.src,
+              format,
+              cardX + 4,
+              imageY,
+              cardWidth - 8,
+              imageHeight,
+              undefined,
+              'FAST',
+            );
+          } else {
+            doc.setDrawColor(...palette.border);
+            doc.rect(cardX + 4, imageY, cardWidth - 8, imageHeight);
+            doc.setTextColor(...palette.text);
+            doc.setFontSize(8);
+            doc.setFont('helvetica', 'bold');
+            doc.text('Evidencia alojada en Drive', cardX + 8, imageY + 14);
+            doc.setFont('helvetica', 'normal');
+            doc.text('Abrir desde la app para verla.', cardX + 8, imageY + 22);
+          }
         } catch (error) {
           console.error('Error embedding evidence image in PDF:', error);
           doc.setDrawColor(...palette.border);
@@ -761,6 +777,13 @@ export default function App() {
           doc.setFont('helvetica', 'normal');
           const commentLines = doc.splitTextToSize(`Obs.: ${entry.comentario}`, cardWidth - 8).slice(0, 2);
           doc.text(commentLines, cardX + 4, imageY + imageHeight + 8);
+        }
+
+        if (entry.isExternal && entry.openUrl) {
+          doc.setTextColor(...palette.blue);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.text(doc.splitTextToSize(`Drive: ${entry.openUrl}`, cardWidth - 8).slice(0, 2), cardX + 4, imageY + imageHeight + 16);
         }
 
         if (column === 1) {
@@ -1626,6 +1649,15 @@ export default function App() {
                         item={item}
                         score={selectedLegajo.scores[item.id]}
                         detail={selectedLegajo.itemDetails[item.id] ?? createEmptyItemDetail()}
+                        uploadContext={{
+                          auditoriaId: selectedSession.id,
+                          auditoriaNombre: selectedSession.nombre,
+                          sucursal: selectedSession.sucursal,
+                          legajoId: selectedLegajo.id,
+                          legajoNombre: selectedLegajo.nombre,
+                          itemId: item.id,
+                          itemRequisito: item.requisito,
+                        }}
                         onChange={(score) => {
                           updateLegajo(selectedLegajo.id, (legajo) => {
                             const currentDetail = legajo.itemDetails[item.id] ?? createEmptyItemDetail();
