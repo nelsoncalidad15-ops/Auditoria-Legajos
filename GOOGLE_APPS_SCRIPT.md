@@ -112,6 +112,7 @@ function ensureAuditHeader_(sheet) {
     "Fecha",
     "Sucursal",
     "Legajo",
+    "Vendedor",
     "Puntajes",
     "Detalle por item",
     "Observaciones",
@@ -142,10 +143,10 @@ function findAuditRowByIds_(sheet, legajoId, auditoriaId) {
     return -1;
   }
 
-  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(sheet.getLastColumn(), 13)).getValues();
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(sheet.getLastColumn(), 14)).getValues();
 
   for (var i = 0; i < values.length; i++) {
-    if (String(values[i][11] || "") === String(legajoId) && String(values[i][12] || "") === String(auditoriaId)) {
+    if (String(values[i][12] || "") === String(legajoId) && String(values[i][13] || "") === String(auditoriaId)) {
       return i + 2;
     }
   }
@@ -382,10 +383,11 @@ function doPost(e) {
       targetRow = sheet.getLastRow() + 1;
     }
 
-    sheet.getRange(targetRow, 1, 1, 13).setValues([[
+    sheet.getRange(targetRow, 1, 1, 14).setValues([[
       new Date(),
       payload.sucursal || "",
       payload.legajoNombre || "",
+      payload.legajoVendedor || "",
       JSON.stringify(payload.scores || {}),
       JSON.stringify(payload.itemDetails || {}),
       payload.observaciones || "",

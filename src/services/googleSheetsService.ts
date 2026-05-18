@@ -107,6 +107,7 @@ export interface EvidenceUploadContext {
   sucursal?: string;
   legajoId?: string;
   legajoNombre?: string;
+  legajoVendedor?: string;
   itemId?: number;
   itemRequisito?: string;
 }

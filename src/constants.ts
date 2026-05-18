@@ -39,9 +39,9 @@ export const AUDIT_ITEMS: AuditItem[] = [
   },
   {
     id: 7,
-    requisito: 'Aviso de entregas',
+    requisito: 'Aviso de entregas - Ventas',
     descripcion: '7.4.3.1 / Planilla de verificación para entrega de vehículo nuevo- Saleforce',
-    roles: ['Ventas', 'Pre-Entrega']
+    roles: ['Ventas']
   },
   {
     id: 8,
@@ -113,7 +113,13 @@ export const AUDIT_ITEMS: AuditItem[] = [
     id: 19,
     requisito: 'Gestion de reclamo',
     descripcion: 'Caso de reclamos abiertos',
-    roles: ['Ventas', 'Admin']
+    roles: ['Ventas', 'Admin', 'Pre-Entrega']
+  },
+  {
+    id: 20,
+    requisito: 'Aviso de entregas - Pre-Entrega',
+    descripcion: '7.4.3.1 / Planilla de verificaciÃ³n para entrega de vehÃ­culo nuevo- Saleforce',
+    roles: ['Pre-Entrega']
   }
 ];
 

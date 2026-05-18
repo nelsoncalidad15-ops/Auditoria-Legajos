@@ -63,9 +63,10 @@ const createEmptyItemDetail = (): AuditItemDetail => ({
   affectedRoles: [],
 });
 
-const createEmptyLegajo = (nombre: string): LegajoRecord => ({
+const createEmptyLegajo = (nombre: string, vendedor: string): LegajoRecord => ({
   id: createId(),
   nombre,
+  vendedor,
   status: 'pendiente',
   createdAt: Date.now(),
   updatedAt: Date.now(),
@@ -77,6 +78,74 @@ const createEmptyLegajo = (nombre: string): LegajoRecord => ({
 });
 
 const normalizeRole = (role: string) => role.trim().toLowerCase();
+const getLegajoVendedorLabel = (legajo: Pick<LegajoRecord, 'vendedor'>) => legajo.vendedor?.trim() || 'Sin vendedor asignado';
+const LEGACY_DELIVERY_DESCRIPTION = '7.4.3.1 / Planilla de verificación para entrega de vehículo nuevo- Saleforce';
+
+const normalizeAuditItemsConfig = (sourceItems: AuditItem[]) => {
+  const ventasTemplate = AUDIT_ITEMS.find((item) => item.requisito === 'Aviso de entregas - Ventas');
+  const preTemplate = AUDIT_ITEMS.find((item) => item.requisito === 'Aviso de entregas - Pre-Entrega');
+
+  if (!ventasTemplate || !preTemplate) {
+    return sourceItems;
+  }
+
+  const matchesDeliveryItem = (item: AuditItem) =>
+    item.descripcion === LEGACY_DELIVERY_DESCRIPTION ||
+    item.requisito === 'Aviso de entregas' ||
+    item.requisito === 'Aviso de entregas - Ventas' ||
+    item.requisito === 'Aviso de entregas - Pre-Entrega';
+
+  const deliveryItems = sourceItems.filter(matchesDeliveryItem);
+  if (deliveryItems.length === 0) {
+    return sourceItems;
+  }
+
+  const ventasSource =
+    deliveryItems.find((item) => normalizeRole(item.requisito).includes('ventas')) ||
+    deliveryItems.find((item) => item.roles.some((role) => normalizeRole(role) === 'ventas')) ||
+    deliveryItems[0];
+  const preSource =
+    deliveryItems.find((item) => normalizeRole(item.requisito).includes('pre-entrega')) ||
+    deliveryItems.find((item) => item.roles.some((role) => normalizeRole(role) === 'pre-entrega'));
+
+  const withoutDeliveryItems = sourceItems.filter((item) => !matchesDeliveryItem(item));
+  const ventasId = ventasSource?.id ?? ventasTemplate.id;
+  const usedIds = new Set(withoutDeliveryItems.map((item) => item.id));
+  const nextAvailableId = (() => {
+    let candidate = preTemplate.id;
+    while (usedIds.has(candidate) || candidate === ventasId) {
+      candidate += 1;
+    }
+    return candidate;
+  })();
+
+  const normalizedVentas = {
+    ...ventasSource,
+    id: ventasId,
+    requisito: ventasTemplate.requisito,
+    descripcion: ventasTemplate.descripcion,
+    roles: ['Ventas'],
+  };
+
+  const normalizedPre = {
+    ...(preSource ?? preTemplate),
+    id: preSource && preSource.id !== ventasId ? preSource.id : nextAvailableId,
+    requisito: preTemplate.requisito,
+    descripcion: preTemplate.descripcion,
+    roles: ['Pre-Entrega'],
+  };
+
+  const sortedBase = [...withoutDeliveryItems, normalizedVentas].sort((a, b) => a.id - b.id);
+  const ventasIndex = sortedBase.findIndex((item) => item.id === ventasId);
+
+  if (ventasIndex !== -1) {
+    sortedBase.splice(ventasIndex + 1, 0, normalizedPre);
+  } else {
+    sortedBase.push(normalizedPre);
+  }
+
+  return sortedBase;
+};
 
 const itemImpactsRole = (item: AuditItem, legajo: LegajoRecord, role: string) => {
   if (legajo.scores[item.id] !== 0) return false;
@@ -98,7 +167,7 @@ const isCompactMobileViewport = () =>
 export default function App() {
   const createSessionRef = React.useRef<HTMLElement | null>(null);
   const { route, goHome, goPreguntas, goLote, goLegajo, goPreview, goBack } = useHashRouter();
-  const [items, setItems] = useState<AuditItem[]>(AUDIT_ITEMS);
+  const [items, setItems] = useState<AuditItem[]>(() => normalizeAuditItemsConfig(AUDIT_ITEMS));
   const [sessions, setSessions] = useState<AuditSession[]>([]);
   const [showCreateSession, setShowCreateSession] = useState(false);
   const [showCreateLegajo, setShowCreateLegajo] = useState(false);
@@ -115,6 +184,7 @@ export default function App() {
     objetivo: 10,
   });
   const [newLegajoNombre, setNewLegajoNombre] = useState('');
+  const [newLegajoVendedor, setNewLegajoVendedor] = useState('');
   const [newItem, setNewItem] = useState({
     requisito: '',
     description: '',
@@ -131,7 +201,9 @@ export default function App() {
     const savedItems = localStorage.getItem(ITEMS_STORAGE_KEY);
     if (savedItems) {
       try {
-        setItems(JSON.parse(savedItems));
+        const normalizedItems = normalizeAuditItemsConfig(JSON.parse(savedItems));
+        setItems(normalizedItems);
+        localStorage.setItem(ITEMS_STORAGE_KEY, JSON.stringify(normalizedItems));
       } catch (error) {
         console.error(error);
       }
@@ -151,8 +223,9 @@ export default function App() {
 
     loadQuestionsConfig().then((remoteItems) => {
       if (remoteItems && remoteItems.length > 0) {
-        setItems(remoteItems);
-        localStorage.setItem(ITEMS_STORAGE_KEY, JSON.stringify(remoteItems));
+        const normalizedItems = normalizeAuditItemsConfig(remoteItems);
+        setItems(normalizedItems);
+        localStorage.setItem(ITEMS_STORAGE_KEY, JSON.stringify(normalizedItems));
         return;
       }
 
@@ -227,8 +300,9 @@ export default function App() {
   };
 
   const persistItems = (nextItems: AuditItem[]) => {
-    setItems(nextItems);
-    localStorage.setItem(ITEMS_STORAGE_KEY, JSON.stringify(nextItems));
+    const normalizedItems = normalizeAuditItemsConfig(nextItems);
+    setItems(normalizedItems);
+    localStorage.setItem(ITEMS_STORAGE_KEY, JSON.stringify(normalizedItems));
   };
 
   const selectedSession = useMemo(
@@ -301,6 +375,11 @@ export default function App() {
     if (!selectedLegajo) return false;
     return items.every((item) => selectedLegajo.scores[item.id] !== undefined) && selectedLegajo.nombre.trim().length > 0;
   }, [selectedLegajo, items]);
+
+  const canFinalize = useMemo(() => {
+    if (!selectedLegajo) return false;
+    return selectedLegajo.nombre.trim().length > 0;
+  }, [selectedLegajo]);
 
   const branchStats = useMemo(() => {
     const stats = {
@@ -441,9 +520,9 @@ export default function App() {
   };
 
   const createLegajo = () => {
-    if (!selectedSession || !newLegajoNombre.trim()) return;
+    if (!selectedSession || !newLegajoNombre.trim() || !newLegajoVendedor.trim()) return;
 
-    const legajo = createEmptyLegajo(newLegajoNombre.trim());
+    const legajo = createEmptyLegajo(newLegajoNombre.trim(), newLegajoVendedor.trim());
     const nextSessions = sessions.map((session) => {
       if (session.id !== selectedSession.id) return session;
       return {
@@ -457,6 +536,7 @@ export default function App() {
     if (selectedSession) goLegajo(selectedSession.id, legajo.id);
     setShowCreateLegajo(false);
     setNewLegajoNombre('');
+    setNewLegajoVendedor('');
   };
 
   const saveQuestions = async () => {
@@ -515,6 +595,7 @@ export default function App() {
       auditoriaNombre: selectedSession.nombre,
       auditor: selectedSession.auditor,
       legajoNombre: selectedLegajo.nombre,
+      legajoVendedor: selectedLegajo.vendedor,
       legajoEstado: 'finalizado',
       scores: selectedLegajo.scores,
       itemDetails: selectedLegajo.itemDetails,
@@ -592,6 +673,7 @@ export default function App() {
 
         return evidencias.map((evidence, evidenceIndex) => ({
           legajo: legajo.nombre,
+          vendedor: getLegajoVendedorLabel(legajo),
           requisito: item.requisito,
           comentario: detail?.comentario?.trim() || '',
           src: getEvidencePreviewSrc(evidence),
@@ -603,6 +685,7 @@ export default function App() {
 
       const generalEvidenceEntries = (legajo.evidencias || []).map((evidence, evidenceIndex) => ({
         legajo: legajo.nombre,
+        vendedor: getLegajoVendedorLabel(legajo),
         requisito: 'Evidencia general',
         comentario: legajo.observaciones?.trim() || '',
         src: getEvidencePreviewSrc(evidence),
@@ -804,7 +887,7 @@ export default function App() {
 
       const matrixHead = ['Legajo', ...items.map((item) => `${item.id}`)];
       const matrixBody = sessionLegajosWithSummary.map((legajo) => [
-        legajo.nombre,
+        `${legajo.nombre}\nVend.: ${getLegajoVendedorLabel(legajo)}`,
         ...items.map((item) => {
           const score = legajo.scores[item.id];
           if (score === 1) return 'SI';
@@ -942,6 +1025,7 @@ export default function App() {
     const executiveNarrative = [
       `El lote ${selectedSession.nombre} presenta ${sessionAggregateSummary.total.toFixed(1)}% de cumplimiento general y ${completionRate.toFixed(0)}% del objetivo operativo alcanzado.`,
       `Se registran ${finalizedCount} legajo(s) finalizado(s), ${inProgressCount} en proceso y ${pendingCount} pendiente(s).`,
+      bestLegajo ? `Entre los casos activos, ${bestLegajo.nombre} corresponde al vendedor ${getLegajoVendedorLabel(bestLegajo)}.` : 'Aun no se registran vendedores destacados en casos activos.',
       bestLegajo ? `El mejor desempeno corresponde a ${bestLegajo.nombre} con ${bestLegajo.summary.total.toFixed(0)}% de cumplimiento.` : 'Aun no hay un legajo con desempeno destacado.',
       attentionLegajo ? `El principal foco de seguimiento es ${attentionLegajo.nombre} con ${attentionLegajo.summary.total.toFixed(0)}% de cumplimiento.` : 'Aun no se detecta un foco de seguimiento prioritario.',
       totalComentarios > 0 ? `Se registran ${totalComentarios} punto(s) con observaciones o evidencia complementaria.` : 'No se registran observaciones complementarias relevantes.',
@@ -1007,7 +1091,7 @@ export default function App() {
       startY: tableStartY + 4,
       head: [['Legajo', 'Estado', 'Total', 'Admin', 'Pre', 'Ventas', 'Avance', 'Alertas']],
       body: sessionLegajosWithSummary.map((legajo) => [
-        legajo.nombre,
+        `${legajo.nombre}\n${getLegajoVendedorLabel(legajo)}`,
         statusLabelMap[legajo.status],
         `${legajo.summary.total.toFixed(0)}%`,
         `${legajo.summary.admin.toFixed(0)}%`,
@@ -1082,7 +1166,7 @@ export default function App() {
           : '';
 
         return [
-          legajo.nombre,
+          `${legajo.nombre}\n${getLegajoVendedorLabel(legajo)}`,
           `${deviationLines}${commentsText}`.trim(),
         ];
       }),
@@ -1501,11 +1585,17 @@ export default function App() {
                         <Plus size={16} className="text-indigo-500" />
                         <h3 className="text-sm font-black text-slate-800 uppercase tracking-[0.18em]">Agregar legajo</h3>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-4">
                         <input
                           placeholder="Nombre del legajo o persona"
                           value={newLegajoNombre}
                           onChange={(e) => setNewLegajoNombre(e.target.value)}
+                          className="glass-input !bg-white"
+                        />
+                        <input
+                          placeholder="Vendedor asignado"
+                          value={newLegajoVendedor}
+                          onChange={(e) => setNewLegajoVendedor(e.target.value)}
                           className="glass-input !bg-white"
                         />
                         <button onClick={createLegajo} className="rounded-2xl bg-indigo-600 px-5 py-4 text-sm font-black text-white shadow-lg shadow-indigo-200">
@@ -1542,6 +1632,9 @@ export default function App() {
                                   {legajo.status === 'finalizado' ? 'Finalizado' : legajo.status === 'en_proceso' ? 'En proceso' : 'Pendiente'}
                                 </span>
                               </div>
+                              <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                Vendedor: {getLegajoVendedorLabel(legajo)}
+                              </p>
                               
                               <div className="mt-3 flex items-center gap-4">
                                 <div className="flex-1">
@@ -1594,6 +1687,10 @@ export default function App() {
                         Volver
                       </a>
                       <h2 className="mt-1.5 text-2xl sm:text-3xl font-black tracking-tight text-slate-900 leading-none">{selectedLegajo.nombre}</h2>
+                      <p className="mt-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                        Vendedor asignado
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-slate-700">{getLegajoVendedorLabel(selectedLegajo)}</p>
                     </div>
 
                     {/* Métricas rápidas */}
@@ -1655,10 +1752,13 @@ export default function App() {
                           sucursal: selectedSession.sucursal,
                           legajoId: selectedLegajo.id,
                           legajoNombre: selectedLegajo.nombre,
+                          legajoVendedor: selectedLegajo.vendedor,
                           itemId: item.id,
                           itemRequisito: item.requisito,
                         }}
                         onChange={(score) => {
+                          const shouldAutoAdvance = score === 1 && item.roles.length <= 1;
+
                           updateLegajo(selectedLegajo.id, (legajo) => {
                             const currentDetail = legajo.itemDetails[item.id] ?? createEmptyItemDetail();
 
@@ -1676,8 +1776,12 @@ export default function App() {
                               },
                             };
                           });
-                          moveToNextAuditItem(item.id);
+
+                          if (shouldAutoAdvance) {
+                            moveToNextAuditItem(item.id);
+                          }
                         }}
+                        onAdvance={() => moveToNextAuditItem(item.id)}
                         onDetailChange={(detail) =>
                           updateLegajo(selectedLegajo.id, (legajo) => ({
                             ...legajo,
@@ -1692,15 +1796,23 @@ export default function App() {
                 </section>
 
                 {/* === BOTÓN FINALIZAR === */}
-                <div className="pt-1 pb-4">
+                <div className="pt-1 pb-4 space-y-2">
+                  {!allItemsAnswered && canFinalize && (
+                    <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                      <span className="mt-0.5 text-amber-500 text-[15px] shrink-0">⚠</span>
+                      <p className="text-[12px] text-amber-800 font-medium">
+                        Quedan <strong>{currentProgress.total - currentProgress.answered}</strong> pregunta(s) sin responder. Podés guardar igual y continuar después.
+                      </p>
+                    </div>
+                  )}
                   <button
                     onClick={handleFinalizeLegajo}
-                    disabled={!allItemsAnswered || isSubmitting}
+                    disabled={!canFinalize || isSubmitting}
                     className="w-full px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                   >
-                    {isSubmitting ? 'Finalizando...' : allItemsAnswered ? '✓ Finalizar legajo' : `Completá ${currentProgress.total - currentProgress.answered} pregunta(s) para finalizar`}
+                    {isSubmitting ? 'Guardando...' : allItemsAnswered ? '✓ Finalizar legajo' : '💾 Guardar y continuar después'}
                   </button>
-                 </div>
+                </div>
               </>
             ) : route.name === 'preview' && selectedSession ? (
               <div className="rounded-[28px] border border-slate-200/60 bg-white/60 p-6 text-center text-slate-500">
@@ -1944,6 +2056,9 @@ export default function App() {
                               </span>
                               <h5 className="font-black text-slate-800">{legajo.nombre}</h5>
                             </div>
+                            <p className="mt-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                              Vendedor: {getLegajoVendedorLabel(legajo)}
+                            </p>
                             <p className="text-xs text-slate-500 mt-2">
                               Avance {legajo.answered}/{items.length} · Admin {legajo.summary.admin.toFixed(0)}% · Pre {legajo.summary.preEntrega.toFixed(0)}% · Ventas {legajo.summary.ventas.toFixed(0)}%
                             </p>

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AuditItem, AuditItemDetail } from '../types';
-import { Check, MessageSquareText, Paperclip, X } from 'lucide-react';
+import { ArrowRight, Check, MessageSquareText, Paperclip, X } from 'lucide-react';
 import { EvidenceUpload } from './EvidenceUpload';
 import { getAffectedRolesForScore } from '../constants';
 import { EvidenceUploadContext } from '../services/googleSheetsService';
@@ -12,9 +12,10 @@ interface Props {
   uploadContext: EvidenceUploadContext;
   onChange: (score: number) => void;
   onDetailChange: (detail: AuditItemDetail) => void;
+  onAdvance: () => void;
 }
 
-export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, onChange, onDetailChange }) => {
+export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, onChange, onDetailChange, onAdvance }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [showRoleSelector, setShowRoleSelector] = useState(false);
   const affectedRoles = useMemo(() => getAffectedRolesForScore(item, score, detail), [detail, item, score]);
@@ -29,53 +30,61 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
   const isOk = score === 1;
   const isDesvio = score === 0;
   const isPending = score === undefined;
-  const hasMultiRoleSelection = !isPending && item.roles.length > 1;
-  const shouldShowRoleSelector = hasMultiRoleSelection && showRoleSelector;
+  const hasMultiRole = item.roles.length > 1;
 
   useEffect(() => {
-    if (!hasMultiRoleSelection) {
+    if (!hasMultiRole) setShowRoleSelector(false);
+  }, [hasMultiRole]);
+
+  useEffect(() => {
+    if (isDesvio) {
+      setShowDetails(true);
+      if (hasMultiRole) setShowRoleSelector(true);
+      return;
+    }
+    if (isOk && detailCount === 0) {
+      setShowDetails(false);
       setShowRoleSelector(false);
     }
-  }, [hasMultiRoleSelection]);
+  }, [detailCount, isDesvio, isOk, hasMultiRole]);
 
   const handleScoreChange = (nextScore: number) => {
     onChange(nextScore);
-
-    if (item.roles.length > 1) {
-      setShowRoleSelector(true);
-    }
+    if (nextScore === 0) setShowDetails(true);
+    if (hasMultiRole) setShowRoleSelector(true);
   };
 
-  // Estado visual del numero
+  // Botón seguir: aparece siempre que haya una respuesta dada
+  const shouldShowAdvance = !isPending;
+
+  // Fondo del número
   const numBg = isOk
     ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-100 shadow-sm'
     : isDesvio
       ? 'bg-red-500 text-white border-red-400 shadow-red-100 shadow-sm'
       : 'bg-slate-100 text-slate-400 border-slate-200';
 
-  // Color de la fila completa segun estado
+  // Borde izquierdo de la fila
   const rowBg = isOk
     ? 'bg-emerald-50/40 border-l-2 border-l-emerald-400'
     : isDesvio
       ? 'bg-red-50/40 border-l-2 border-l-red-400'
-      : isPending
-        ? 'border-l-2 border-l-transparent'
-        : '';
+      : 'border-l-2 border-l-transparent';
 
   return (
     <div id={`audit-item-${item.id}`} className={`scroll-mt-6 transition-colors duration-300 ${rowBg}`}>
-      {/* Separador */}
       <div className="mx-4 sm:mx-6 border-t border-slate-100/80 first:border-t-0" />
 
       <div className="px-4 py-4 sm:px-6 sm:py-5">
         {/* Fila principal */}
-        <div className="flex items-center gap-3 sm:gap-4">
-          {/* Numero con indicador de estado */}
+        <div className="flex items-start gap-3 sm:items-center sm:gap-4">
+
+          {/* Número / estado */}
           <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[10px] font-black transition-all duration-200 ${numBg}`}>
             {isOk ? <Check size={13} strokeWidth={3.5} /> : isDesvio ? <X size={13} strokeWidth={3.5} /> : item.id}
           </div>
 
-          {/* Contenido central */}
+          {/* Texto central */}
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <h3 className="text-[13px] sm:text-[14px] font-bold text-slate-800 leading-snug">{item.requisito}</h3>
@@ -97,41 +106,41 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
             )}
           </div>
 
-          {/* Botones OK / DESVIO + Nota */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Botones OK / DESVIO / Nota */}
+          <div className="flex shrink-0 flex-wrap justify-end gap-2 sm:gap-2">
             {/* OK */}
             <button
               onClick={() => handleScoreChange(1)}
               title="OK"
-              className={`audit-btn flex items-center gap-2 rounded-2xl px-4 py-2.5 text-[12px] font-black uppercase tracking-wide transition-all duration-150 select-none ${
+              className={`audit-btn flex items-center justify-center gap-1.5 rounded-2xl px-4 py-2.5 text-[12px] font-black uppercase tracking-wide transition-all duration-150 select-none ${
                 isOk
                   ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200 scale-105'
-                  : 'bg-white text-emerald-600 border-2 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300 hover:scale-105'
+                  : 'bg-white text-emerald-600 border-2 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300'
               }`}
             >
-              <Check size={14} strokeWidth={3} />
-              <span className="hidden sm:inline">OK</span>
+              <Check size={13} strokeWidth={3} />
+              OK
             </button>
 
             {/* DESVIO */}
             <button
               onClick={() => handleScoreChange(0)}
               title="Desvio"
-              className={`audit-btn flex items-center gap-2 rounded-2xl px-4 py-2.5 text-[12px] font-black uppercase tracking-wide transition-all duration-150 select-none ${
+              className={`audit-btn flex items-center justify-center gap-1.5 rounded-2xl px-4 py-2.5 text-[12px] font-black uppercase tracking-wide transition-all duration-150 select-none ${
                 isDesvio
                   ? 'bg-red-500 text-white shadow-lg shadow-red-200 scale-105'
-                  : 'bg-white text-red-500 border-2 border-red-200 hover:bg-red-50 hover:border-red-300 hover:scale-105'
+                  : 'bg-white text-red-500 border-2 border-red-200 hover:bg-red-50 hover:border-red-300'
               }`}
             >
-              <X size={14} strokeWidth={3} />
-              <span className="hidden sm:inline">Desvio</span>
+              <X size={13} strokeWidth={3} />
+              Desvio
             </button>
 
             {/* Nota */}
             <button
               onClick={() => setShowDetails((prev) => !prev)}
               title={showDetails ? 'Ocultar notas' : 'Agregar nota o evidencia'}
-              className={`audit-btn relative flex items-center justify-center rounded-xl p-2.5 transition-all duration-150 border-2 ${
+              className={`audit-btn relative flex h-[42px] w-[42px] items-center justify-center rounded-2xl transition-all duration-150 border-2 ${
                 showDetails
                   ? 'bg-slate-700 text-white border-slate-700'
                   : detailCount > 0
@@ -149,66 +158,49 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
           </div>
         </div>
 
-        {hasMultiRoleSelection && (
-          <div className="mt-3 ml-11 space-y-3">
-            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3">
-              <span className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">
+        {/* Selector de roles (solo si tiene múltiples y ya respondió) */}
+        {hasMultiRole && !isPending && (
+          <div className="mt-3 ml-11">
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-100 bg-amber-50/60 px-4 py-2.5">
+              <span className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-600 shrink-0">
                 Aplica a:
               </span>
-              <span className="text-[12px] font-bold text-amber-900">
-                {affectedRoles.join(', ')}
-              </span>
-              <button
-                onClick={() => setShowRoleSelector((prev) => !prev)}
-                className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-amber-700 transition-all hover:border-amber-400 hover:bg-amber-100"
-              >
-                {showRoleSelector ? 'Ocultar' : 'Cambiar'}
-              </button>
-            </div>
-
-            {shouldShowRoleSelector && (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
-                <label className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">
-                  Esta respuesta aplica a
-                </label>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {item.roles.map((role) => {
-                    const isActive = affectedRoles.includes(role);
-                    const nextRoles = isActive
-                      ? affectedRoles.filter((currentRole) => currentRole !== role)
-                      : [...affectedRoles, role];
-
-                    return (
-                      <button
-                        key={role}
-                        onClick={() =>
-                          onDetailChange({
-                            ...detail,
-                            affectedRoles: nextRoles.length > 0 ? nextRoles : [role],
-                          })
-                        }
-                        className={`rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-all ${
-                          isActive
-                            ? 'border-amber-500 bg-amber-500 text-white'
-                            : 'border-amber-200 bg-white text-amber-700'
-                        }`}
-                      >
-                        {role}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="mt-2 text-[11px] text-amber-800">
-                  Por defecto cuenta para todos los sectores vinculados. Aca podes dejarla solo en el sector que corresponda.
-                </p>
+              <div className="flex flex-wrap gap-1.5">
+                {item.roles.map((role) => {
+                  const isActive = affectedRoles.includes(role);
+                  const nextRoles = isActive
+                    ? affectedRoles.filter((r) => r !== role)
+                    : [...affectedRoles, role];
+                  return (
+                    <button
+                      key={role}
+                      onClick={() =>
+                        onDetailChange({
+                          ...detail,
+                          affectedRoles: nextRoles.length > 0 ? nextRoles : [role],
+                        })
+                      }
+                      className={`rounded-xl px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] transition-all border ${
+                        isActive
+                          ? 'border-amber-500 bg-amber-500 text-white'
+                          : 'border-amber-200 bg-white text-amber-700 hover:border-amber-400'
+                      }`}
+                    >
+                      {role}
+                    </button>
+                  );
+                })}
               </div>
-            )}
+              <span className="text-[10px] text-amber-600/70 ml-auto hidden sm:block">
+                Tocá para cambiar sector
+              </span>
+            </div>
           </div>
         )}
 
-        {/* Panel desplegable */}
+        {/* Panel desplegable: observación + evidencias */}
         {showDetails && (
-          <div className="mt-4 ml-11 grid gap-3 sm:grid-cols-2 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="mt-3 ml-11 grid gap-3 sm:grid-cols-2 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
               <label className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
                 <MessageSquareText size={11} />
@@ -243,6 +235,23 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
                 buttonLabel="Agregar foto"
               />
             </div>
+          </div>
+        )}
+
+        {/* Botón SEGUIR — aparece siempre que haya respuesta */}
+        {shouldShowAdvance && (
+          <div className="mt-3 ml-11 flex justify-end">
+            <button
+              onClick={onAdvance}
+              className={`audit-btn inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-[11px] font-black uppercase tracking-[0.14em] shadow-md transition-all duration-150 ${
+                isDesvio
+                  ? 'bg-indigo-600 text-white shadow-indigo-200 hover:bg-indigo-700'
+                  : 'bg-emerald-600 text-white shadow-emerald-200 hover:bg-emerald-700'
+              }`}
+            >
+              Siguiente
+              <ArrowRight size={14} />
+            </button>
           </div>
         )}
       </div>

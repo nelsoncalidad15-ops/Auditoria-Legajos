@@ -31,6 +31,7 @@ export interface AuditItemDetail {
 export interface LegajoRecord {
   id: string;
   nombre: string;
+  vendedor?: string;
   status: LegajoStatus;
   createdAt: number;
   updatedAt: number;
@@ -62,6 +63,7 @@ export interface AuditData {
   auditoriaNombre?: string;
   auditor?: string;
   legajoNombre: string;
+  legajoVendedor?: string;
   legajoEstado?: 'pendiente' | 'en_proceso' | 'finalizado';
   scores: Record<number, number>; // itemId: score (0 or 1)
   itemDetails: Record<number, AuditItemDetail>;
