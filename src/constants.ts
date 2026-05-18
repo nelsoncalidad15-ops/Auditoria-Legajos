@@ -124,7 +124,7 @@ export const getAffectedRolesForScore = (
   score: number | undefined,
   detail?: AuditItemDetail,
 ) => {
-  if (score !== 0) {
+  if (score === undefined) {
     return item.roles;
   }
 
@@ -151,10 +151,6 @@ export const calculateSummary = (
 
       const itemHasRole = item.roles.some((role) => normalizeRole(role) === normalizeRole(roleFilter));
       if (!itemHasRole) return [];
-
-      if (score === 1) {
-        return [score];
-      }
 
       const affectedRoles = getAffectedRolesForScore(item, score, itemDetails[item.id]);
       const appliesToRole = affectedRoles.some((role) => normalizeRole(role) === normalizeRole(roleFilter));

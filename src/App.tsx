@@ -1639,7 +1639,7 @@ export default function App() {
                                 ...legajo.itemDetails,
                                 [item.id]: {
                                   ...currentDetail,
-                                  affectedRoles: score === 0 ? getAffectedRolesForScore(item, score, currentDetail) : [],
+                                  affectedRoles: getAffectedRolesForScore(item, score, currentDetail),
                                 },
                               },
                             };

@@ -26,12 +26,13 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, onChange, onDet
   const isOk = score === 1;
   const isDesvio = score === 0;
   const isPending = score === undefined;
+  const hasMultiRoleSelection = !isPending && item.roles.length > 1;
 
   useEffect(() => {
-    if (isDesvio && item.roles.length > 1) {
+    if (hasMultiRoleSelection) {
       setShowDetails(true);
     }
-  }, [isDesvio, item.roles.length]);
+  }, [hasMultiRoleSelection]);
 
   // Estado visual del número
   const numBg = isOk
@@ -140,10 +141,10 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, onChange, onDet
         {/* Panel desplegable */}
         {showDetails && (
           <div className="mt-4 ml-11 grid gap-3 sm:grid-cols-2 animate-in fade-in slide-in-from-top-2 duration-200">
-            {isDesvio && item.roles.length > 1 && (
+            {hasMultiRoleSelection && (
               <div className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
                 <label className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">
-                  Este desvio impacta en
+                  Esta respuesta aplica a
                 </label>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {item.roles.map((role) => {
@@ -173,7 +174,7 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, onChange, onDet
                   })}
                 </div>
                 <p className="mt-2 text-[11px] text-amber-800">
-                  Por defecto afecta a todos los sectores vinculados. Acá podés dejarlo solo en el sector que corresponda.
+                  Por defecto cuenta para todos los sectores vinculados. Acá podés dejarla solo en el sector que corresponda.
                 </p>
               </div>
             )}
