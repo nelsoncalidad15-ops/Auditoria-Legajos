@@ -1842,7 +1842,6 @@ export default function App() {
                             moveToNextAuditItem(item.id);
                           }
                         }}
-                        onAdvance={() => moveToNextAuditItem(item.id)}
                         onDetailChange={(detail) =>
                           updateLegajo(selectedLegajo.id, (legajo) => ({
                             ...legajo,

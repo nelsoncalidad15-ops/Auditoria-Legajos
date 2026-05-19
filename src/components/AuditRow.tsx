@@ -12,10 +12,9 @@ interface Props {
   uploadContext: EvidenceUploadContext;
   onChange: (score: number) => void;
   onDetailChange: (detail: AuditItemDetail) => void;
-  onAdvance: () => void;
 }
 
-export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, onChange, onDetailChange, onAdvance }) => {
+export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, onChange, onDetailChange }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [showRoleSelector, setShowRoleSelector] = useState(false);
   const affectedRoles = useMemo(() => getAffectedRolesForScore(item, score, detail), [detail, item, score]);
@@ -53,9 +52,6 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
     if (nextScore === 0) setShowDetails(true);
     if (hasMultiRole) setShowRoleSelector(true);
   };
-
-  // Botón seguir: aparece siempre que haya una respuesta dada
-  const shouldShowAdvance = !isPending;
 
   // Fondo del número
   const numBg = isOk
@@ -241,20 +237,6 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
           </div>
         )}
 
-        {/* Botón SEGUIR — aparece siempre que haya respuesta */}
-        {shouldShowAdvance && (
-          <div className="mt-3 ml-11 flex justify-end">
-            <button
-              onClick={onAdvance}
-              className={`audit-btn inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-[11px] font-black uppercase tracking-[0.14em] shadow-md transition-all duration-150 ${
-                isDesvio
-                  ? 'bg-indigo-600 text-white shadow-indigo-200 hover:bg-indigo-700'
-                  : 'bg-emerald-600 text-white shadow-emerald-200 hover:bg-emerald-700'
-              }`}
-            >
-              Siguiente
-              <ArrowRight size={14} />
-            </button>
           </div>
         )}
       </div>
