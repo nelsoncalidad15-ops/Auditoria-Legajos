@@ -164,6 +164,27 @@ const pickInitialSessionId = (sessions: AuditSession[]) =>
 const isCompactMobileViewport = () =>
   typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
 
+const urlToBase64 = (url: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
+      } else {
+        reject(new Error('Failed to get canvas context'));
+      }
+    };
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = url;
+  });
+};
+
 export default function App() {
   const createSessionRef = React.useRef<HTMLElement | null>(null);
   const { route, goHome, goPreguntas, goLote, goLegajo, goPreview, goBack } = useHashRouter();
@@ -175,6 +196,7 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingQuestions, setIsSavingQuestions] = useState(false);
   const [isSyncingSessions, setIsSyncingSessions] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
   const [syncMessage, setSyncMessage] = useState('');
   const [newSession, setNewSession] = useState({
@@ -623,9 +645,11 @@ export default function App() {
     }
   };
 
-  const generatePDF = () => {
+  const generatePDF = async () => {
     if (!selectedSession) return;
-
+    setIsGeneratingPDF(true);
+    
+    try {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     const pageHeight = doc.internal.pageSize.height;
@@ -774,7 +798,7 @@ export default function App() {
       return 18;
     };
 
-    const drawEvidenceSection = () => {
+    const drawEvidenceSection = async () => {
       const sectionY = ensurePageSpace(90);
       doc.setTextColor(...palette.ink);
       doc.setFontSize(11);
@@ -796,7 +820,8 @@ export default function App() {
       const imageHeight = 32;
       const cardHeight = 62;
 
-      evidenceEntries.forEach((entry, index) => {
+      for (let index = 0; index < evidenceEntries.length; index++) {
+        const entry = evidenceEntries[index];
         const column = index % 2;
         if (column === 0 && cursorY + cardHeight > pageHeight - 22) {
           doc.addPage();
@@ -822,10 +847,19 @@ export default function App() {
         const imageY = cardY + 14;
 
         try {
-          if (entry.src.startsWith('data:image/')) {
-            const format = entry.src.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+          let base64Src = entry.src;
+          if (!base64Src.startsWith('data:image/')) {
+            try {
+              base64Src = await urlToBase64(entry.src);
+            } catch (err) {
+              console.warn('Could not convert to base64, using fallback:', err);
+            }
+          }
+
+          if (base64Src.startsWith('data:image/')) {
+            const format = base64Src.startsWith('data:image/png') ? 'PNG' : 'JPEG';
             (doc as unknown as { addImage: (...args: unknown[]) => void }).addImage(
-              entry.src,
+              base64Src,
               format,
               cardX + 4,
               imageY,
@@ -872,7 +906,7 @@ export default function App() {
         if (column === 1) {
           cursorY += cardHeight + 8;
         }
-      });
+      }
     };
 
     const drawLegajoMatrixSection = () => {
@@ -1186,7 +1220,7 @@ export default function App() {
     });
 
     drawLegajoMatrixSection();
-    drawEvidenceSection();
+    await drawEvidenceSection();
 
     const pageCount = doc.getNumberOfPages();
     for (let i = 1; i <= pageCount; i += 1) {
@@ -1202,6 +1236,12 @@ export default function App() {
 
     doc.save(`Auditoria_Lote_${selectedSession.sucursal}_${selectedSession.nombre}_${Date.now()}.pdf`);
     goLote(selectedSession.id);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Hubo un error al generar el PDF. Revise la consola para más detalles.');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
   /* ─── breadcrumb helpers ─────────────────────────── */
@@ -2105,9 +2145,10 @@ export default function App() {
                 </button>
                 <button
                   onClick={generatePDF}
-                  className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm shadow-xl shadow-indigo-100 flex items-center justify-center gap-2"
+                  disabled={isGeneratingPDF}
+                  className={`flex-[2] py-4 text-white rounded-2xl font-black text-sm shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 ${isGeneratingPDF ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
                 >
-                  <Download size={18} /> DESCARGAR PDF FINAL
+                  <Download size={18} /> {isGeneratingPDF ? 'GENERANDO PDF...' : 'DESCARGAR PDF FINAL'}
                 </button>
               </div>
             </motion.div>
