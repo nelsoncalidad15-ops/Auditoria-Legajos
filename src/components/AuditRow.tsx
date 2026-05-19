@@ -77,37 +77,40 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
 
       <div className="px-4 py-4 sm:px-6 sm:py-5">
         {/* Fila principal */}
-        <div className="flex items-start gap-3 sm:items-center sm:gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          
+          {/* Fila superior en mobile: Número y Texto */}
+          <div className="flex items-start gap-3 sm:items-center sm:gap-4 min-w-0 flex-1">
+            {/* Número / estado */}
+            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[10px] font-black transition-all duration-200 ${numBg}`}>
+              {isOk ? <Check size={13} strokeWidth={3.5} /> : isDesvio ? <X size={13} strokeWidth={3.5} /> : item.id}
+            </div>
 
-          {/* Número / estado */}
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[10px] font-black transition-all duration-200 ${numBg}`}>
-            {isOk ? <Check size={13} strokeWidth={3.5} /> : isDesvio ? <X size={13} strokeWidth={3.5} /> : item.id}
-          </div>
-
-          {/* Texto central */}
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-              <h3 className="text-[13px] sm:text-[14px] font-bold text-slate-800 leading-snug">{item.requisito}</h3>
-              {item.descripcion && (
-                <span className="text-[11px] text-slate-400 leading-snug">{item.descripcion}</span>
+            {/* Texto central */}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <h3 className="text-[13px] sm:text-[14px] font-bold text-slate-800 leading-snug">{item.requisito}</h3>
+                {item.descripcion && (
+                  <span className="text-[11px] text-slate-400 leading-snug">{item.descripcion}</span>
+                )}
+              </div>
+              {item.roles.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {item.roles.map((role) => (
+                    <span
+                      key={role}
+                      className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500"
+                    >
+                      {role}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
-            {item.roles.length > 0 && (
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {item.roles.map((role) => (
-                  <span
-                    key={role}
-                    className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500"
-                  >
-                    {role}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
 
           {/* Botones OK / DESVIO / Nota */}
-          <div className="flex shrink-0 flex-wrap justify-end gap-2 sm:gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end ml-11 sm:ml-0">
             {/* OK */}
             <button
               onClick={() => handleScoreChange(1)}
