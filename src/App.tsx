@@ -1850,6 +1850,7 @@ export default function App() {
                             itemDetails: { ...legajo.itemDetails, [item.id]: detail },
                           }))
                         }
+                        onAdvance={() => moveToNextAuditItem(item.id)}
                       />
                     ))}
                   </div>

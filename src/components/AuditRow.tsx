@@ -12,9 +12,10 @@ interface Props {
   uploadContext: EvidenceUploadContext;
   onChange: (score: number) => void;
   onDetailChange: (detail: AuditItemDetail) => void;
+  onAdvance: () => void;
 }
 
-export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, onChange, onDetailChange }) => {
+export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, onChange, onDetailChange, onAdvance }) => {
   const [showDetails, setShowDetails] = useState(false);
   const [showRoleSelector, setShowRoleSelector] = useState(false);
   const affectedRoles = useMemo(() => getAffectedRolesForScore(item, score, detail), [detail, item, score]);
@@ -30,6 +31,8 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
   const isDesvio = score === 0;
   const isPending = score === undefined;
   const hasMultiRole = item.roles.length > 1;
+  const shouldShowAdvance = !isPending;
+
 
   useEffect(() => {
     if (!hasMultiRole) setShowRoleSelector(false);
@@ -237,6 +240,15 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
           </div>
         )}
 
+        {shouldShowAdvance && (
+          <div className="mt-4 ml-11 flex justify-end">
+            <button
+              onClick={onAdvance}
+              className="audit-btn inline-flex items-center gap-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 text-[11px] font-black uppercase tracking-[0.14em] shadow-md shadow-emerald-100/50 hover:shadow-lg hover:shadow-emerald-100 transition-all duration-150 select-none cursor-pointer"
+            >
+              Siguiente
+              <ArrowRight size={13} strokeWidth={3} />
+            </button>
           </div>
         )}
       </div>
