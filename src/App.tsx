@@ -1211,7 +1211,7 @@ export default function App() {
     const executiveNarrative = [
       `El lote ${selectedSession.nombre} presenta ${sessionAggregateSummary.total.toFixed(1)}% de cumplimiento general y ${completionRate.toFixed(0)}% del objetivo operativo alcanzado.`,
       `Se registran ${finalizedCount} legajo(s) finalizado(s), ${inProgressCount} en proceso y ${pendingCount} pendiente(s).`,
-      bestLegajo ? `Entre los casos activos, ${bestLegajo.nombre} corresponde al vendedor ${getLegajoVendedorLabel(bestLegajo)}.` : 'Aun no se registran vendedores destacados en casos activos.',
+      bestLegajo ? `Entre los casos activos, ${bestLegajo.nombre} se destaca por su avance actual.` : 'Aun no se registran casos activos destacados.',
       bestLegajo ? `El mejor desempeno corresponde a ${bestLegajo.nombre} con ${bestLegajo.summary.total.toFixed(0)}% de cumplimiento.` : 'Aun no hay un legajo con desempeno destacado.',
       attentionLegajo ? `El principal foco de seguimiento es ${attentionLegajo.nombre} con ${attentionLegajo.summary.total.toFixed(0)}% de cumplimiento.` : 'Aun no se detecta un foco de seguimiento prioritario.',
       totalComentarios > 0 ? `Se registran ${totalComentarios} punto(s) con observaciones o evidencia complementaria.` : 'No se registran observaciones complementarias relevantes.',
