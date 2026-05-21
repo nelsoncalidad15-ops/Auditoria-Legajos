@@ -873,8 +873,12 @@ export default function App() {
         const deviationItems = legajo.desvioItems.filter((item) => itemImpactsRole(item, legajo, area.key));
         const relatedCommentEntries = items
           .filter((item) => {
-            if (!item.roles.some((role) => normalizeRole(role) === normalizeRole(area.key))) return false;
             const detail = legajo.itemDetails[item.id];
+            if (legajo.scores[item.id] !== 0) return false;
+            const appliesToArea = getAffectedRolesForScore(item, legajo.scores[item.id], detail).some(
+              (role) => normalizeRole(role) === normalizeRole(area.key),
+            );
+            if (!appliesToArea) return false;
             return Boolean(detail?.comentario?.trim() || detail?.evidencias?.length);
           })
           .map((item) => {
