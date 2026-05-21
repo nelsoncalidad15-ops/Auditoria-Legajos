@@ -2,7 +2,7 @@
 import React, { useRef, useState } from 'react';
 import { Camera, Image as ImageIcon, LoaderCircle, X } from 'lucide-react';
 import { EvidenceAsset } from '../types';
-import { getEvidenceLabel, getEvidenceOpenUrl, getEvidencePreviewSrc, isDriveEvidence } from '../utils/evidence';
+import { getEvidenceDriveUrl, getEvidenceLabel, getEvidenceOpenUrl, getEvidencePreviewSrc, isDriveEvidence } from '../utils/evidence';
 import { EvidenceUploadContext, uploadEvidence } from '../services/googleSheetsService';
 
 interface Props {
@@ -85,7 +85,7 @@ export const EvidenceUpload: React.FC<Props> = ({ evidencias, onChange, uploadCo
                 rel="noreferrer"
                 className="absolute left-1 bottom-1 rounded-md bg-slate-900/80 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[0.16em] text-white"
               >
-                Drive
+                Ver imagen
               </a>
             )}
             <button
@@ -173,20 +173,40 @@ export const EvidenceUpload: React.FC<Props> = ({ evidencias, onChange, uploadCo
                 className="max-h-[90vh] max-w-[90vw] object-contain"
               />
             ) : (
-              <div className="flex min-h-[280px] w-[min(90vw,720px)] flex-col items-center justify-center gap-4 p-8 text-center">
-                <ImageIcon size={34} className="text-slate-400" />
-                <div>
-                  <p className="text-sm font-black text-slate-900">{selectedPreview.name}</p>
-                  <p className="mt-1 text-xs text-slate-500">La evidencia está guardada en Drive.</p>
+              <div className="flex max-h-[90vh] w-[min(90vw,820px)] flex-col overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-slate-900">{selectedPreview.name}</p>
+                    <p className="mt-1 text-xs text-slate-500">La evidencia está guardada en Drive.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={getEvidenceOpenUrl(selectedPreview)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-black text-white"
+                    >
+                      Abrir imagen
+                    </a>
+                    {getEvidenceDriveUrl(selectedPreview) && (
+                      <a
+                        href={getEvidenceDriveUrl(selectedPreview)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-700"
+                      >
+                        Abrir en Drive
+                      </a>
+                    )}
+                  </div>
                 </div>
-                <a
-                  href={getEvidenceOpenUrl(selectedPreview)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-black text-white"
-                >
-                  Abrir en Drive
-                </a>
+                <div className="flex items-center justify-center bg-slate-100 p-4">
+                  <img
+                    src={getEvidencePreviewSrc(selectedPreview)}
+                    alt={selectedPreview.name || 'Vista previa de evidencia'}
+                    className="max-h-[70vh] max-w-[85vw] object-contain"
+                  />
+                </div>
               </div>
             )}
           </div>
