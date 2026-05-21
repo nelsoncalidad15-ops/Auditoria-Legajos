@@ -157,6 +157,11 @@ const itemImpactsRole = (item: AuditItem, legajo: LegajoRecord, role: string) =>
   );
 };
 
+const formatDeviationList = (deviationItems: AuditItem[]) =>
+  deviationItems.length > 0
+    ? deviationItems.map((item, index) => `${index + 1}) ${item.requisito}`).join('\n')
+    : 'Sin desvios registrados.';
+
 const sortSessionsByUpdatedAt = (sessions: AuditSession[]) =>
   [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -432,6 +437,46 @@ export default function App() {
       ventas: totals.ventas / source.length,
     };
   }, [sessionLegajosWithSummary]);
+
+  const buildLegajoOperationalSummary = React.useCallback((legajo: typeof sessionLegajosWithSummary[number]) => {
+    const adminDeviations = legajo.desvioItems.filter((item) => itemImpactsRole(item, legajo, 'Admin'));
+    const preEntregaDeviations = legajo.desvioItems.filter((item) => itemImpactsRole(item, legajo, 'Pre-Entrega'));
+    const ventasDeviations = legajo.desvioItems.filter((item) => itemImpactsRole(item, legajo, 'Ventas'));
+
+    const commentEntries = items
+      .filter((item) => {
+        const detail = legajo.itemDetails[item.id];
+        return Boolean(detail?.comentario?.trim() || detail?.evidencias?.length);
+      })
+      .map((item) => {
+        const detail = legajo.itemDetails[item.id];
+        const parts = [];
+        if (detail?.comentario?.trim()) {
+          parts.push(detail.comentario.trim());
+        }
+        if (detail?.evidencias?.length) {
+          parts.push(`${detail.evidencias.length} evidencia(s)`);
+        }
+        return `${item.requisito}: ${parts.join(' / ')}`;
+      });
+
+    return [
+      `Desvios generales (${legajo.desvioItems.length}):`,
+      formatDeviationList(legajo.desvioItems),
+      '',
+      `Administracion (${adminDeviations.length} impacto(s)):`,
+      formatDeviationList(adminDeviations),
+      '',
+      `Pre-entrega (${preEntregaDeviations.length} impacto(s)):`,
+      formatDeviationList(preEntregaDeviations),
+      '',
+      `Ventas (${ventasDeviations.length} impacto(s)):`,
+      formatDeviationList(ventasDeviations),
+      ...(commentEntries.length > 0
+        ? ['', 'Observaciones complementarias:', ...commentEntries.map((entry) => `- ${entry}`)]
+        : []),
+    ].join('\n');
+  }, [items]);
 
   const currentProgress = useMemo(() => {
     const answered = selectedLegajo ? items.filter((item) => selectedLegajo.scores[item.id] !== undefined).length : 0;
@@ -1280,37 +1325,10 @@ export default function App() {
     autoTable(doc, {
       startY: detailStartY + 4,
       head: [['Legajo', 'Sintesis operativa']],
-      body: sessionLegajosWithSummary.map((legajo) => {
-        const deviationLines = legajo.desvioItems.length > 0
-          ? `Desvios detectados: ${legajo.desvioItems.map((item, index) => `${index + 1}) ${item.requisito}`).join(' | ')}.`
-          : 'Desvios detectados: sin desvios registrados.';
-
-        const commentEntries = items
-          .filter((item) => {
-            const detail = legajo.itemDetails[item.id];
-            return Boolean(detail?.comentario?.trim() || detail?.evidencias?.length);
-          })
-          .map((item) => {
-            const detail = legajo.itemDetails[item.id];
-            const parts = [];
-            if (detail?.comentario?.trim()) {
-              parts.push(detail.comentario.trim());
-            }
-            if (detail?.evidencias?.length) {
-              parts.push(`${detail.evidencias.length} evidencia(s)`);
-            }
-            return `${item.requisito}: ${parts.join(' / ')}`;
-          });
-
-        const commentsText = commentEntries.length > 0
-          ? ` Observaciones complementarias: ${commentEntries.join(' | ')}.`
-          : '';
-
-        return [
-          `${legajo.nombre}\n${getLegajoVendedorLabel(legajo)}`,
-          `${deviationLines}${commentsText}`.trim(),
-        ];
-      }),
+      body: sessionLegajosWithSummary.map((legajo) => [
+        `${legajo.nombre}\n${getLegajoVendedorLabel(legajo)}`,
+        buildLegajoOperationalSummary(legajo),
+      ]),
       headStyles: {
         fillColor: palette.ink,
         textColor: [255, 255, 255],
@@ -1319,10 +1337,18 @@ export default function App() {
       },
       alternateRowStyles: { fillColor: palette.paper },
       margin: { left: 14, right: 14 },
-      styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak', textColor: palette.text, lineColor: palette.border, lineWidth: 0.15 },
+      styles: {
+        fontSize: 7.6,
+        cellPadding: 3,
+        overflow: 'linebreak',
+        valign: 'top',
+        textColor: palette.text,
+        lineColor: palette.border,
+        lineWidth: 0.15,
+      },
       columnStyles: {
-        0: { cellWidth: 34 },
-        1: { cellWidth: 148 },
+        0: { cellWidth: 32 },
+        1: { cellWidth: 150 },
       },
     });
 
