@@ -655,6 +655,28 @@ export default function App() {
     setNewLegajoVendedor('');
   };
 
+  const removeLegajo = (legajoId: string) => {
+    if (!selectedSession) return;
+
+    const legajo = selectedSession.legajos.find((candidate) => candidate.id === legajoId);
+    if (!legajo) return;
+
+    const shouldRemove = window.confirm(`¿Querés borrar el legajo "${legajo.nombre}"? Esta acción no se puede deshacer.`);
+    if (!shouldRemove) return;
+
+    const nextSessions = sessions.map((session) => {
+      if (session.id !== selectedSession.id) return session;
+
+      return {
+        ...session,
+        updatedAt: Date.now(),
+        legajos: session.legajos.filter((candidate) => candidate.id !== legajoId),
+      };
+    });
+
+    persistSessions(nextSessions);
+  };
+
   const saveQuestions = async () => {
     setIsSavingQuestions(true);
     try {
@@ -840,6 +862,59 @@ export default function App() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 6);
 
+    const areaDefinitions = [
+      { key: 'Admin', label: 'Administracion', color: palette.indigo, summaryKey: 'admin' as const, helper: 'Control documental' },
+      { key: 'Pre-Entrega', label: 'Pre-entrega', color: palette.teal, summaryKey: 'preEntrega' as const, helper: 'Entrega y preparacion' },
+      { key: 'Ventas', label: 'Ventas', color: palette.blue, summaryKey: 'ventas' as const, helper: 'Proceso comercial' },
+    ];
+
+    const areaSections = areaDefinitions.map((area) => {
+      const legajos = sessionLegajosWithSummary.map((legajo) => {
+        const deviationItems = legajo.desvioItems.filter((item) => itemImpactsRole(item, legajo, area.key));
+        const relatedCommentEntries = items
+          .filter((item) => {
+            if (!item.roles.some((role) => normalizeRole(role) === normalizeRole(area.key))) return false;
+            const detail = legajo.itemDetails[item.id];
+            return Boolean(detail?.comentario?.trim() || detail?.evidencias?.length);
+          })
+          .map((item) => {
+            const detail = legajo.itemDetails[item.id];
+            const parts = [];
+            if (detail?.comentario?.trim()) parts.push(detail.comentario.trim());
+            if (detail?.evidencias?.length) parts.push(`${detail.evidencias.length} evidencia(s)`);
+            return `${item.requisito}: ${parts.join(' / ')}`;
+          });
+
+        return {
+          ...legajo,
+          areaScore: legajo.summary[area.summaryKey],
+          deviationItems,
+          relatedCommentEntries,
+        };
+      });
+
+      const affectedLegajos = legajos.filter((legajo) => legajo.deviationItems.length > 0 || legajo.relatedCommentEntries.length > 0);
+      const deviationCount = legajos.reduce((acc, legajo) => acc + legajo.deviationItems.length, 0);
+      const recurringRows = Array.from(
+        legajos.reduce((map, legajo) => {
+          legajo.deviationItems.forEach((item) => {
+            map.set(item.requisito, (map.get(item.requisito) || 0) + 1);
+          });
+          return map;
+        }, new Map<string, number>()).entries(),
+      )
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+
+      return {
+        ...area,
+        legajos,
+        affectedLegajos,
+        deviationCount,
+        recurringRows,
+      };
+    });
+
     const evidenceEntries = sessionLegajosWithSummary.flatMap((legajo) => {
       const itemEvidenceEntries = items.flatMap((item) => {
         const detail = legajo.itemDetails[item.id];
@@ -938,6 +1013,17 @@ export default function App() {
       doc.text(helper, x + 10, y + 27);
     };
 
+    const resetPageChrome = (sectionTitle?: string) => {
+      doc.setFillColor(...palette.paper);
+      doc.rect(0, 0, pageWidth, pageHeight, 'F');
+      doc.setTextColor(...palette.ink);
+      if (sectionTitle) {
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text(sectionTitle, 14, 18);
+      }
+    };
+
     const ensurePageSpace = (requiredHeight: number) => {
       const currentY = (doc.lastAutoTable?.finalY || 0) + 10;
       if (currentY + requiredHeight <= pageHeight - 20) {
@@ -945,8 +1031,7 @@ export default function App() {
       }
 
       doc.addPage();
-      doc.setFillColor(...palette.paper);
-      doc.rect(0, 0, pageWidth, pageHeight, 'F');
+      resetPageChrome();
       return 18;
     };
 
@@ -955,7 +1040,7 @@ export default function App() {
       doc.setTextColor(...palette.ink);
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
-      doc.text('7. Anexo de evidencias', 14, sectionY);
+      doc.text('8. Anexo de evidencias', 14, sectionY);
 
       if (evidenceEntries.length === 0) {
         doc.setTextColor(...palette.text);
@@ -1062,7 +1147,7 @@ export default function App() {
     };
 
     const drawLegajoMatrixSection = () => {
-      const matrixStartY = ensureSpace(112, '6. Matriz resumida por legajo');
+      const matrixStartY = ensureSpace(112, '7. Matriz resumida por legajo');
       const matrixLegend = items.map((item) => `${item.id} = ${item.requisito}`).join(' | ');
 
       doc.setTextColor(...palette.text);
@@ -1350,6 +1435,88 @@ export default function App() {
         0: { cellWidth: 32 },
         1: { cellWidth: 150 },
       },
+    });
+
+    areaSections.forEach((area, areaIndex) => {
+      doc.addPage();
+      resetPageChrome(`6.${areaIndex + 1}. Foco por area: ${area.label}`);
+
+      drawStatCard(14, 26, 56, 28, area.label, `${sessionAggregateSummary[area.summaryKey].toFixed(1)}%`, area.helper, area.color);
+      drawStatCard(74, 26, 56, 28, 'Impactos', `${area.deviationCount}`, 'Desvios del area', area.color);
+      drawStatCard(134, 26, 56, 28, 'Legajos', `${area.affectedLegajos.length}`, 'Con alertas u obs.', area.color);
+
+      drawRoundedPanel(14, 60, pageWidth - 28, 23, palette.panel, palette.border);
+      doc.setTextColor(...palette.ink);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Recomendacion de gestion', 18, 69);
+      doc.setTextColor(...palette.text);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      const actionPlanNote = `Para los desvios mas recurrentes de ${area.label}, se solicita formalmente que el area elabore un plan de accion correctivo con responsables, fechas objetivo y seguimiento, a fin de eliminar la recurrencia y fortalecer el control operativo.`;
+      doc.text(doc.splitTextToSize(actionPlanNote, pageWidth - 38), 18, 76);
+
+      autoTable(doc, {
+        startY: 90,
+        head: [['Hallazgo recurrente', 'Veces']],
+        body: area.recurringRows.length > 0
+          ? area.recurringRows.map(([hallazgo, cantidad]) => [hallazgo, `${cantidad}`])
+          : [['Sin desvios recurrentes registrados en esta area', '0']],
+        headStyles: {
+          fillColor: area.color,
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 8.5,
+        },
+        alternateRowStyles: { fillColor: palette.paper },
+        margin: { left: 14, right: 14 },
+        styles: { fontSize: 7.6, cellPadding: 2.8, textColor: palette.text, lineColor: palette.border, lineWidth: 0.15 },
+        columnStyles: {
+          0: { cellWidth: 150 },
+          1: { cellWidth: 26, halign: 'center' },
+        },
+      });
+
+      autoTable(doc, {
+        startY: (doc.lastAutoTable?.finalY || 90) + 8,
+        head: [['Legajo', '% area', 'Impactos', 'Desvios / observaciones del area']],
+        body: area.legajos.map((legajo) => [
+          legajo.nombre,
+          `${legajo.areaScore.toFixed(0)}%`,
+          `${legajo.deviationItems.length}`,
+          [
+            legajo.deviationItems.length > 0
+              ? `Desvios: ${legajo.deviationItems.map((item, index) => `${index + 1}) ${item.requisito}`).join(' | ')}`
+              : 'Desvios: sin desvios registrados.',
+            legajo.relatedCommentEntries.length > 0
+              ? `Observaciones / evidencias: ${legajo.relatedCommentEntries.join(' | ')}`
+              : 'Observaciones / evidencias: sin novedades registradas.',
+          ].join('\n'),
+        ]),
+        headStyles: {
+          fillColor: area.color,
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 8,
+        },
+        alternateRowStyles: { fillColor: palette.paper },
+        margin: { left: 14, right: 14 },
+        styles: {
+          fontSize: 7.3,
+          cellPadding: 2.8,
+          overflow: 'linebreak',
+          valign: 'top',
+          textColor: palette.text,
+          lineColor: palette.border,
+          lineWidth: 0.15,
+        },
+        columnStyles: {
+          0: { cellWidth: 32 },
+          1: { cellWidth: 18, halign: 'center' },
+          2: { cellWidth: 18, halign: 'center' },
+          3: { cellWidth: 122 },
+        },
+      });
     });
 
     drawLegajoMatrixSection();
@@ -1832,12 +1999,22 @@ export default function App() {
                                 Actualizado: {new Date(legajo.updatedAt).toLocaleString()}
                               </div>
                             </div>
-                            <a
-                              href={`#/lote/${selectedSession.id}/legajo/${legajo.id}`}
-                              className="rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-lg shadow-slate-900/20 text-center"
-                            >
-                              Abrir legajo
-                            </a>
+                            <div className="flex flex-col sm:flex-row gap-3">
+                              <a
+                                href={`#/lote/${selectedSession.id}/legajo/${legajo.id}`}
+                                className="rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black text-white shadow-lg shadow-slate-900/20 text-center"
+                              >
+                                Abrir legajo
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => removeLegajo(legajo.id)}
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm font-black text-red-700 transition-colors hover:bg-red-100"
+                              >
+                                <Trash2 size={15} />
+                                Borrar
+                              </button>
+                            </div>
                           </div>
                         );
                       })
