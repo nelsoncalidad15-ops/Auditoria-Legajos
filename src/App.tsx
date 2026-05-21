@@ -11,12 +11,14 @@ import {
   ArrowLeft,
   Building2,
   Camera,
+  Check,
   ChevronRight,
   ClipboardList,
   Download,
   FolderKanban,
   Home,
   ListChecks,
+  Pencil,
   Plus,
   Save,
   Settings2,
@@ -30,7 +32,7 @@ import { AUDIT_ITEMS, calculateSummary, getAffectedRolesForScore } from './const
 import { AuditData, AuditItem, AuditItemDetail, AuditSession, BranchName, LegajoRecord, LegajoStatus } from './types';
 import { AuditRow } from './components/AuditRow';
 import { SummaryChart } from './components/SummaryChart';
-import { getEvidenceOpenUrl, getEvidencePreviewSrc, isDriveEvidence } from './utils/evidence';
+import { getEvidenceOpenUrl, getEvidencePdfSources, getEvidencePreviewSrc, isDriveEvidence } from './utils/evidence';
 
 import {
   hasGoogleSheetsConfig,
@@ -164,7 +166,9 @@ const pickInitialSessionId = (sessions: AuditSession[]) =>
 const isCompactMobileViewport = () =>
   typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
 
-const urlToBase64 = async (url: string): Promise<string> => {
+const urlToBase64 = async (input: string | string[]): Promise<string> => {
+  const candidates = Array.isArray(input) ? input.filter(Boolean) : [input].filter(Boolean);
+
   const fetchAsBase64 = async (targetUrl: string): Promise<string> => {
     const response = await fetch(targetUrl);
     if (!response.ok) throw new Error('Network response was not ok');
@@ -177,33 +181,50 @@ const urlToBase64 = async (url: string): Promise<string> => {
     });
   };
 
-  try {
-    return await fetchAsBase64(url);
-  } catch (err) {
+  const drawImageToCanvas = async (targetUrl: string) =>
+    new Promise<string>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/jpeg', 0.88));
+        } else {
+          reject(new Error('Failed to get canvas context'));
+        }
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = targetUrl;
+    });
+
+  const wsrvUrl = (targetUrl: string) => `https://wsrv.nl/?url=${encodeURIComponent(targetUrl)}&output=jpg`;
+
+  for (const candidate of candidates) {
     try {
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-      return await fetchAsBase64(proxyUrl);
-    } catch (proxyErr) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = 'Anonymous';
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0);
-            resolve(canvas.toDataURL('image/jpeg', 0.8));
-          } else {
-            reject(new Error('Failed to get canvas context'));
+      return await fetchAsBase64(candidate);
+    } catch (directErr) {
+      try {
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(candidate)}`;
+        return await fetchAsBase64(proxyUrl);
+      } catch (proxyErr) {
+        try {
+          return await fetchAsBase64(wsrvUrl(candidate));
+        } catch (wsrvErr) {
+          try {
+            return await drawImageToCanvas(candidate);
+          } catch (canvasErr) {
+            console.warn('Failed PDF image candidate:', candidate, { directErr, proxyErr, wsrvErr, canvasErr });
           }
-        };
-        img.onerror = () => reject(new Error('Failed to load image'));
-        img.src = url;
-      });
+        }
+      }
     }
   }
+
+  throw new Error('FAILED_TO_CONVERT_IMAGE_TO_BASE64');
 };
 
 export default function App() {
@@ -228,6 +249,9 @@ export default function App() {
   });
   const [newLegajoNombre, setNewLegajoNombre] = useState('');
   const [newLegajoVendedor, setNewLegajoVendedor] = useState('');
+  const [isEditingHeader, setIsEditingHeader] = useState(false);
+  const [editLegajoNombre, setEditLegajoNombre] = useState('');
+  const [editLegajoVendedor, setEditLegajoVendedor] = useState('');
   const [newItem, setNewItem] = useState({
     requisito: '',
     description: '',
@@ -238,6 +262,10 @@ export default function App() {
   const selectedSessionId = ('sessionId' in route) ? route.sessionId : null;
   const selectedLegajoId = ('legajoId' in route) ? route.legajoId : null;
   const showPreview = route.name === 'preview';
+
+  React.useEffect(() => {
+    setIsEditingHeader(false);
+  }, [selectedLegajoId]);
 
   const hydrateSharedData = React.useCallback(() => {
     let localSessionsSnapshot: AuditSession[] = [];
@@ -624,6 +652,62 @@ export default function App() {
     persistItems(nextItems);
   };
 
+  const handleSaveLegajoHeader = async () => {
+    if (!selectedSession || !selectedLegajo) return;
+
+    const nextNombre = editLegajoNombre.trim();
+    const nextVendedor = editLegajoVendedor.trim();
+    if (!nextNombre) return;
+
+    const updatedAt = Date.now();
+
+    if (selectedLegajo.status === 'finalizado') {
+      setIsSubmitting(true);
+
+      const updatedLegajo: LegajoRecord = {
+        ...selectedLegajo,
+        nombre: nextNombre,
+        vendedor: nextVendedor,
+        updatedAt,
+      };
+
+      const data: AuditData = {
+        id: updatedLegajo.id,
+        timestamp: updatedAt,
+        sucursal: selectedSession.sucursal,
+        auditoriaId: selectedSession.id,
+        auditoriaNombre: selectedSession.nombre,
+        auditor: selectedSession.auditor,
+        legajoNombre: updatedLegajo.nombre,
+        legajoVendedor: updatedLegajo.vendedor,
+        legajoEstado: 'finalizado',
+        scores: updatedLegajo.scores,
+        itemDetails: updatedLegajo.itemDetails,
+        evidencias: updatedLegajo.evidencias,
+        observaciones: updatedLegajo.observaciones,
+        conclusiones: updatedLegajo.conclusiones,
+        summary: calculateSummary(updatedLegajo.scores, items, updatedLegajo.itemDetails),
+      };
+
+      try {
+        await saveToSheets(data);
+      } catch (error) {
+        alert('No se pudo actualizar el nombre del legajo en Google Sheets. El cambio no se guardo para evitar inconsistencias.');
+        return;
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
+
+    updateLegajo(selectedLegajo.id, (legajo) => ({
+      ...legajo,
+      nombre: nextNombre,
+      vendedor: nextVendedor,
+      updatedAt,
+    }));
+    setIsEditingHeader(false);
+  };
+
   const handleFinalizeLegajo = async () => {
     if (!selectedSession || !selectedLegajo) return;
 
@@ -722,6 +806,7 @@ export default function App() {
           requisito: item.requisito,
           comentario: detail?.comentario?.trim() || '',
           src: getEvidencePreviewSrc(evidence),
+          pdfSources: getEvidencePdfSources(evidence),
           openUrl: getEvidenceOpenUrl(evidence),
           isExternal: isDriveEvidence(evidence),
           evidenceIndex,
@@ -734,6 +819,7 @@ export default function App() {
         requisito: 'Evidencia general',
         comentario: legajo.observaciones?.trim() || '',
         src: getEvidencePreviewSrc(evidence),
+        pdfSources: getEvidencePdfSources(evidence),
         openUrl: getEvidenceOpenUrl(evidence),
         isExternal: isDriveEvidence(evidence),
         evidenceIndex,
@@ -871,7 +957,7 @@ export default function App() {
           let base64Src = entry.src;
           if (!base64Src.startsWith('data:image/')) {
             try {
-              base64Src = await urlToBase64(entry.src);
+              base64Src = await urlToBase64(entry.pdfSources || entry.src);
             } catch (err) {
               console.warn('Could not convert to base64, using fallback:', err);
             }
@@ -1094,10 +1180,10 @@ export default function App() {
     doc.text('2. Panorama de cumplimiento', 18, 177);
 
     [
-      { label: 'General', value: sessionAggregateSummary.total, color: palette.ink, deviations: totalDesvios },
-      { label: 'Administracion', value: sessionAggregateSummary.admin, color: palette.indigo, deviations: adminDeviationCount },
-      { label: 'Pre-entrega', value: sessionAggregateSummary.preEntrega, color: palette.teal, deviations: preEntregaDeviationCount },
-      { label: 'Ventas', value: sessionAggregateSummary.ventas, color: palette.blue, deviations: ventasDeviationCount },
+      { label: 'General', value: sessionAggregateSummary.total, color: palette.ink, metric: `${totalDesvios} desvio(s) unicos` },
+      { label: 'Administracion', value: sessionAggregateSummary.admin, color: palette.indigo, metric: `${adminDeviationCount} impacto(s)` },
+      { label: 'Pre-entrega', value: sessionAggregateSummary.preEntrega, color: palette.teal, metric: `${preEntregaDeviationCount} impacto(s)` },
+      { label: 'Ventas', value: sessionAggregateSummary.ventas, color: palette.blue, metric: `${ventasDeviationCount} impacto(s)` },
     ].forEach((row, index) => {
       const rowY = 186 + index * 7;
       doc.setTextColor(...palette.text);
@@ -1112,7 +1198,7 @@ export default function App() {
       doc.text(`${row.value.toFixed(1)}%`, 152, rowY);
       doc.setTextColor(...palette.muted);
       doc.setFont('helvetica', 'normal');
-      doc.text(`${row.deviations} desvio(s)`, 170, rowY);
+      doc.text(row.metric, 170, rowY);
     });
 
     doc.setTextColor(...palette.ink);
@@ -1739,19 +1825,80 @@ export default function App() {
                 <section className="rounded-[30px] border border-white/80 bg-white/85 backdrop-blur-xl shadow-[0_18px_45px_rgba(148,163,184,0.14)] px-5 py-4 sm:px-6">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     {/* Nombre */}
-                    <div className="min-w-0">
-                      <a
-                        href={selectedSessionId ? `#/lote/${selectedSessionId}` : '#/'}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400 hover:text-slate-600 transition-colors"
-                      >
-                        <ArrowLeft size={13} />
-                        Volver
-                      </a>
-                      <h2 className="mt-1.5 text-2xl sm:text-3xl font-black tracking-tight text-slate-900 leading-none">{selectedLegajo.nombre}</h2>
-                      <p className="mt-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
-                        Vendedor asignado
-                      </p>
-                      <p className="mt-1 text-sm font-bold text-slate-700">{getLegajoVendedorLabel(selectedLegajo)}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <a
+                          href={selectedSessionId ? `#/lote/${selectedSessionId}` : '#/'}
+                          className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400 hover:text-slate-600 transition-colors"
+                        >
+                          <ArrowLeft size={13} />
+                          Volver
+                        </a>
+                        <span className="text-slate-300 text-[11px] select-none">•</span>
+                        {!isEditingHeader ? (
+                          <button
+                            onClick={() => {
+                              setEditLegajoNombre(selectedLegajo.nombre);
+                              setEditLegajoVendedor(selectedLegajo.vendedor || '');
+                              setIsEditingHeader(true);
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400 hover:text-indigo-600 transition-colors"
+                          >
+                            <Pencil size={10} />
+                            Editar datos
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={handleSaveLegajoHeader}
+                              disabled={isSubmitting || !editLegajoNombre.trim()}
+                              className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-white hover:bg-indigo-700 transition-colors shadow-sm"
+                            >
+                              <Check size={10} />
+                              {isSubmitting ? 'Guardando...' : 'Guardar'}
+                            </button>
+                            <button
+                              onClick={() => setIsEditingHeader(false)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 hover:bg-slate-50 transition-colors"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {isEditingHeader ? (
+                        <div className="mt-3 space-y-2 max-w-sm">
+                          <div>
+                            <label className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 block mb-1">Nombre del Legajo</label>
+                            <input
+                              type="text"
+                              value={editLegajoNombre}
+                              onChange={(e) => setEditLegajoNombre(e.target.value)}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-bold text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                              placeholder="Ej: Nelson Calidad"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 block mb-1">Vendedor</label>
+                            <input
+                              type="text"
+                              value={editLegajoVendedor}
+                              onChange={(e) => setEditLegajoVendedor(e.target.value)}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-bold text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                              placeholder="Ej: Juan Perez"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <h2 className="mt-1.5 text-2xl sm:text-3xl font-black tracking-tight text-slate-900 leading-none">{selectedLegajo.nombre}</h2>
+                          <p className="mt-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                            Vendedor asignado
+                          </p>
+                          <p className="mt-1 text-sm font-bold text-slate-700">{getLegajoVendedorLabel(selectedLegajo)}</p>
+                        </>
+                      )}
                     </div>
 
                     {/* Métricas rápidas */}
