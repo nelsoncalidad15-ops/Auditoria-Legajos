@@ -165,6 +165,18 @@ const formatDeviationList = (deviationItems: AuditItem[]) =>
 const sortSessionsByUpdatedAt = (sessions: AuditSession[]) =>
   [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 
+const normalizeSessionFingerprintPart = (value?: string | number) =>
+  String(value ?? '').trim().toLowerCase();
+
+const getSessionFingerprint = (session: AuditSession) =>
+  [
+    normalizeSessionFingerprintPart(session.nombre),
+    normalizeSessionFingerprintPart(session.sucursal),
+    normalizeSessionFingerprintPart(session.auditor),
+    normalizeSessionFingerprintPart(session.objetivo),
+    normalizeSessionFingerprintPart(session.createdAt),
+  ].join('|');
+
 const sortLegajosByUpdatedAt = (legajos: LegajoRecord[]) =>
   [...legajos].sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -207,7 +219,19 @@ const mergeSessionsById = (sessions: AuditSession[]) => {
     byId.set(session.id, mergeSessionRecord(existing, session));
   });
 
-  return sortSessionsByUpdatedAt(Array.from(byId.values()));
+  const byFingerprint = new Map<string, AuditSession>();
+  Array.from(byId.values()).forEach((session) => {
+    const fingerprint = getSessionFingerprint(session);
+    const existing = byFingerprint.get(fingerprint);
+    if (!existing) {
+      byFingerprint.set(fingerprint, session);
+      return;
+    }
+
+    byFingerprint.set(fingerprint, mergeSessionRecord(existing, session));
+  });
+
+  return sortSessionsByUpdatedAt(Array.from(byFingerprint.values()));
 };
 
 const pickInitialSessionId = (sessions: AuditSession[]) =>
