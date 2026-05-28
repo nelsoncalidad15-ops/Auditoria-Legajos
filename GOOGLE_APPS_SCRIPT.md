@@ -243,6 +243,23 @@ function saveSessionRecord_(session) {
     }
   }
 
+  function mergeLegajos_(baseLegajos, incomingLegajos) {
+    var byId = {};
+
+    (baseLegajos || []).concat(incomingLegajos || []).forEach(function(legajo) {
+      if (!legajo || !legajo.id) return;
+
+      var existing = byId[legajo.id];
+      if (!existing || Number(legajo.updatedAt || 0) >= Number(existing.updatedAt || 0)) {
+        byId[legajo.id] = legajo;
+      }
+    });
+
+    return Object.keys(byId)
+      .map(function(key) { return byId[key]; })
+      .sort(function(a, b) { return Number(b.updatedAt || 0) - Number(a.updatedAt || 0); });
+  }
+
   if (targetRow === -1) {
     targetRow = sheet.getLastRow() + 1;
   } else {
@@ -250,6 +267,26 @@ function saveSessionRecord_(session) {
     var incomingUpdatedAt = Number(session.updatedAt || 0);
     if (existingUpdatedAt > incomingUpdatedAt) {
       return { skipped: true, reason: "OLDER_SESSION_VERSION" };
+    }
+
+    try {
+      var existingSession = values[targetRow - 2][9] ? JSON.parse(values[targetRow - 2][9]) : {};
+      session = {
+        id: session.id,
+        nombre: session.nombre || existingSession.nombre || "",
+        sucursal: session.sucursal || existingSession.sucursal || "",
+        auditor: session.auditor || existingSession.auditor || "",
+        objetivo: Number(session.objetivo || existingSession.objetivo || 0),
+        status: session.status || existingSession.status || "en_curso",
+        createdAt: Math.min(
+          Number(existingSession.createdAt || session.createdAt || 0),
+          Number(session.createdAt || existingSession.createdAt || 0)
+        ),
+        updatedAt: Math.max(existingUpdatedAt, incomingUpdatedAt),
+        legajos: mergeLegajos_(existingSession.legajos || [], session.legajos || [])
+      };
+    } catch (error) {
+      session.legajos = mergeLegajos_([], session.legajos || []);
     }
   }
 
@@ -267,6 +304,91 @@ function saveSessionRecord_(session) {
   ]]);
 
   return { skipped: false };
+}
+
+function syncAuditIntoSessionRecord_(payload) {
+  if (!payload || !payload.auditoriaId || !payload.id) {
+    return { skipped: true, reason: "AUDIT_SESSION_IDS_REQUIRED" };
+  }
+
+  var sheet = getSheetByName_("Sesiones");
+  ensureSessionsHeader_(sheet);
+
+  var values = sheet.getLastRow() > 1
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 10).getValues()
+    : [];
+
+  var targetRow = -1;
+  var existingSession = null;
+
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0]) !== String(payload.auditoriaId)) continue;
+
+    targetRow = i + 2;
+    try {
+      existingSession = values[i][9] ? JSON.parse(values[i][9]) : null;
+    } catch (error) {
+      existingSession = null;
+    }
+    break;
+  }
+
+  var existingLegajo = null;
+  if (existingSession && existingSession.legajos && existingSession.legajos.length) {
+    for (var j = 0; j < existingSession.legajos.length; j++) {
+      if (String(existingSession.legajos[j].id) === String(payload.id)) {
+        existingLegajo = existingSession.legajos[j];
+        break;
+      }
+    }
+  }
+
+  var timestamp = Number(payload.timestamp || Date.now());
+  var nextLegajo = {
+    id: payload.id,
+    nombre: payload.legajoNombre || (existingLegajo && existingLegajo.nombre) || "",
+    vendedor: payload.legajoVendedor || (existingLegajo && existingLegajo.vendedor) || "",
+    status: payload.legajoEstado || "finalizado",
+    createdAt: Number((existingLegajo && existingLegajo.createdAt) || timestamp),
+    updatedAt: timestamp,
+    finalizedAt: payload.legajoEstado === "finalizado"
+      ? timestamp
+      : Number((existingLegajo && existingLegajo.finalizedAt) || 0) || undefined,
+    scores: payload.scores || (existingLegajo && existingLegajo.scores) || {},
+    itemDetails: payload.itemDetails || (existingLegajo && existingLegajo.itemDetails) || {},
+    evidencias: payload.evidencias || (existingLegajo && existingLegajo.evidencias) || [],
+    observaciones: payload.observaciones || (existingLegajo && existingLegajo.observaciones) || "",
+    conclusiones: payload.conclusiones || (existingLegajo && existingLegajo.conclusiones) || ""
+  };
+
+  var nextSession = existingSession || {
+    id: payload.auditoriaId,
+    nombre: payload.auditoriaNombre || "",
+    sucursal: payload.sucursal || "",
+    auditor: payload.auditor || "",
+    objetivo: 0,
+    status: "en_curso",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    legajos: []
+  };
+
+  nextSession = {
+    id: nextSession.id,
+    nombre: nextSession.nombre || payload.auditoriaNombre || "",
+    sucursal: nextSession.sucursal || payload.sucursal || "",
+    auditor: nextSession.auditor || payload.auditor || "",
+    objetivo: Number(nextSession.objetivo || 0),
+    status: nextSession.status || "en_curso",
+    createdAt: Number(nextSession.createdAt || timestamp),
+    updatedAt: Math.max(Number(nextSession.updatedAt || 0), timestamp),
+    legajos: (nextSession.legajos || []).filter(function(legajo) {
+      return String(legajo.id) !== String(nextLegajo.id);
+    })
+  };
+
+  nextSession.legajos.unshift(nextLegajo);
+  return saveSessionRecord_(nextSession);
 }
 
 function loadSessionsSnapshot_() {
@@ -399,6 +521,8 @@ function doPost(e) {
       payload.id || "",
       payload.auditoriaId || ""
     ]]);
+
+    syncAuditIntoSessionRecord_(payload);
 
     return ContentService
       .createTextOutput(JSON.stringify({ status: "success" }))

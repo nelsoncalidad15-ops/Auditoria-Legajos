@@ -165,6 +165,51 @@ const formatDeviationList = (deviationItems: AuditItem[]) =>
 const sortSessionsByUpdatedAt = (sessions: AuditSession[]) =>
   [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 
+const sortLegajosByUpdatedAt = (legajos: LegajoRecord[]) =>
+  [...legajos].sort((a, b) => b.updatedAt - a.updatedAt);
+
+const mergeLegajosById = (legajoCollections: LegajoRecord[][]) => {
+  const byId = new Map<string, LegajoRecord>();
+
+  legajoCollections.flat().forEach((legajo) => {
+    const existing = byId.get(legajo.id);
+    if (!existing || legajo.updatedAt >= existing.updatedAt) {
+      byId.set(legajo.id, legajo);
+    }
+  });
+
+  return sortLegajosByUpdatedAt(Array.from(byId.values()));
+};
+
+const mergeSessionRecord = (base: AuditSession, incoming: AuditSession): AuditSession => {
+  const newer = incoming.updatedAt >= base.updatedAt ? incoming : base;
+  const older = newer === incoming ? base : incoming;
+
+  return {
+    ...older,
+    ...newer,
+    createdAt: Math.min(base.createdAt || incoming.createdAt || 0, incoming.createdAt || base.createdAt || 0),
+    updatedAt: Math.max(base.updatedAt || 0, incoming.updatedAt || 0),
+    legajos: mergeLegajosById([base.legajos || [], incoming.legajos || []]),
+  };
+};
+
+const mergeSessionsById = (sessions: AuditSession[]) => {
+  const byId = new Map<string, AuditSession>();
+
+  sessions.forEach((session) => {
+    const existing = byId.get(session.id);
+    if (!existing) {
+      byId.set(session.id, session);
+      return;
+    }
+
+    byId.set(session.id, mergeSessionRecord(existing, session));
+  });
+
+  return sortSessionsByUpdatedAt(Array.from(byId.values()));
+};
+
 const pickInitialSessionId = (sessions: AuditSession[]) =>
   sortSessionsByUpdatedAt(sessions).find((session) => session.status === 'en_curso')?.id ?? null;
 
@@ -289,9 +334,8 @@ export default function App() {
     if (savedSessions) {
       try {
         const parsed = JSON.parse(savedSessions) as AuditSession[];
-        localSessionsSnapshot = parsed;
-        const sorted = sortSessionsByUpdatedAt(parsed);
-        setSessions(sorted);
+        localSessionsSnapshot = mergeSessionsById(parsed);
+        setSessions(localSessionsSnapshot);
       } catch (error) {
         console.error(error);
       }
@@ -310,16 +354,23 @@ export default function App() {
 
     loadSessionsSnapshot().then((remoteSessions) => {
       if (remoteSessions && remoteSessions.length > 0) {
-        const sorted = sortSessionsByUpdatedAt(remoteSessions);
-        setSessions(sorted);
-        localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sorted));
+        // Google Sheets is the source of truth whenever it responds with shared sessions.
+        const normalizedRemoteSessions = mergeSessionsById(remoteSessions);
+        setSessions(normalizedRemoteSessions);
+        localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(normalizedRemoteSessions));
         setSyncMessage('');
         return;
       }
 
       if (hasGoogleSheetsConfig) {
+        if (localSessionsSnapshot.length > 0) {
+          setSessions(localSessionsSnapshot);
+          setSyncMessage('Google Sheets no devolvio auditorias compartidas. Se mantuvieron los datos locales de este dispositivo.');
+          return;
+        }
+
         setSessions([]);
-        setSyncMessage('Google Sheets no devolvio auditorias compartidas. No se restauraron datos locales automaticamente.');
+        setSyncMessage('Google Sheets no devolvio auditorias compartidas. No se encontraron datos locales para restaurar.');
         return;
       }
 
@@ -342,6 +393,12 @@ export default function App() {
     });
   }, []);
 
+  const clearLocalSessionsCache = React.useCallback(() => {
+    localStorage.removeItem(SESSIONS_STORAGE_KEY);
+    setSyncMessage('Se limpio el cache local de auditorias. Se recargaron solo los datos compartidos.');
+    hydrateSharedData();
+  }, [hydrateSharedData]);
+
   React.useEffect(() => {
     hydrateSharedData();
   }, []);
@@ -355,14 +412,14 @@ export default function App() {
   }, [showCreateSession]);
 
   const persistSessions = (nextSessions: AuditSession[]) => {
-    const sorted = sortSessionsByUpdatedAt(nextSessions);
-    setSessions(sorted);
-    localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sorted));
+    const mergedSessions = mergeSessionsById(nextSessions);
+    setSessions(mergedSessions);
+    localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(mergedSessions));
 
     if (!hasGoogleSheetsConfig) return;
 
     setIsSyncingSessions(true);
-    saveSessionsSnapshot(sorted)
+    saveSessionsSnapshot(mergedSessions)
       .then(() => {
         setSyncMessage('');
       })
@@ -1633,15 +1690,23 @@ export default function App() {
                 <div className="rounded-[24px] border border-amber-200 bg-amber-50/90 px-4 py-4 text-sm text-amber-900 shadow-[0_10px_30px_rgba(217,119,6,0.08)]">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <p className="font-semibold">{syncMessage}</p>
-                    <button
-                      onClick={() => {
-                        setSyncMessage('');
-                        hydrateSharedData();
-                      }}
-                      className="rounded-2xl border border-amber-300 bg-white px-4 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-amber-900"
-                    >
-                      Reintentar sincronizacion
-                    </button>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        onClick={() => {
+                          setSyncMessage('');
+                          hydrateSharedData();
+                        }}
+                        className="rounded-2xl border border-amber-300 bg-white px-4 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-amber-900"
+                      >
+                        Reintentar sincronizacion
+                      </button>
+                      <button
+                        onClick={clearLocalSessionsCache}
+                        className="rounded-2xl border border-slate-300 bg-slate-900 px-4 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white"
+                      >
+                        Limpiar cache local
+                      </button>
+                    </div>
                   </div>
                 </div>
               </section>

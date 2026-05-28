@@ -20,14 +20,46 @@ const normalizeItemsForCompare = (items: AuditItem[]) =>
 const sortSessionsByUpdatedAt = (sessions: AuditSession[]) =>
   [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 
+const sortLegajosByUpdatedAt = (legajos: LegajoRecord[]) =>
+  [...legajos].sort((a, b) => b.updatedAt - a.updatedAt);
+
+const mergeLegajosById = (legajoCollections: LegajoRecord[][]) => {
+  const byId = new Map<string, LegajoRecord>();
+
+  legajoCollections.flat().forEach((legajo) => {
+    const existing = byId.get(legajo.id);
+    if (!existing || legajo.updatedAt >= existing.updatedAt) {
+      byId.set(legajo.id, legajo);
+    }
+  });
+
+  return sortLegajosByUpdatedAt(Array.from(byId.values()));
+};
+
+const mergeSessionRecord = (base: AuditSession, incoming: AuditSession): AuditSession => {
+  const newer = incoming.updatedAt >= base.updatedAt ? incoming : base;
+  const older = newer === incoming ? base : incoming;
+
+  return {
+    ...older,
+    ...newer,
+    createdAt: Math.min(base.createdAt || incoming.createdAt || 0, incoming.createdAt || base.createdAt || 0),
+    updatedAt: Math.max(base.updatedAt || 0, incoming.updatedAt || 0),
+    legajos: mergeLegajosById([base.legajos || [], incoming.legajos || []]),
+  };
+};
+
 const dedupeSessionsById = (sessions: AuditSession[]) => {
   const byId = new Map<string, AuditSession>();
 
   sessions.forEach((session) => {
     const existing = byId.get(session.id);
-    if (!existing || session.updatedAt >= existing.updatedAt) {
+    if (!existing) {
       byId.set(session.id, session);
+      return;
     }
+
+    byId.set(session.id, mergeSessionRecord(existing, session));
   });
 
   return sortSessionsByUpdatedAt(Array.from(byId.values()));
