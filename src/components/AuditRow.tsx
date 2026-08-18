@@ -1,16 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AuditItem, AuditItemDetail } from '../types';
-import { ArrowRight, Check, MessageSquareText, Paperclip, X } from 'lucide-react';
+import { AuditItem, AuditItemDetail, AuditScore } from '../types';
+import { ArrowRight, Check, MessageSquareText, Minus, Paperclip, X } from 'lucide-react';
 import { EvidenceUpload } from './EvidenceUpload';
-import { getAffectedRolesForScore } from '../constants';
+import { getAffectedRolesForScore, NOT_APPLICABLE_SCORE } from '../constants';
 import { EvidenceUploadContext } from '../services/googleSheetsService';
 
 interface Props {
   item: AuditItem;
-  score: number | undefined;
+  score: AuditScore | undefined;
   detail: AuditItemDetail;
   uploadContext: EvidenceUploadContext;
-  onChange: (score: number) => void;
+  onChange: (score: AuditScore) => void;
   onDetailChange: (detail: AuditItemDetail) => void;
   onAdvance: () => void;
 }
@@ -29,6 +29,7 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
 
   const isOk = score === 1;
   const isDesvio = score === 0;
+  const isNotApplicable = score === NOT_APPLICABLE_SCORE;
   const isPending = score === undefined;
   const hasMultiRole = item.roles.length > 1;
   const shouldShowAdvance = !isPending;
@@ -44,16 +45,16 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
       if (hasMultiRole) setShowRoleSelector(true);
       return;
     }
-    if (isOk && detailCount === 0) {
+    if ((isOk || isNotApplicable) && detailCount === 0) {
       setShowDetails(false);
       setShowRoleSelector(false);
     }
-  }, [detailCount, isDesvio, isOk, hasMultiRole]);
+  }, [detailCount, isDesvio, isOk, isNotApplicable, hasMultiRole]);
 
-  const handleScoreChange = (nextScore: number) => {
+  const handleScoreChange = (nextScore: AuditScore) => {
     onChange(nextScore);
     if (nextScore === 0) setShowDetails(true);
-    if (hasMultiRole) setShowRoleSelector(true);
+    if (hasMultiRole && nextScore !== NOT_APPLICABLE_SCORE) setShowRoleSelector(true);
   };
 
   // Fondo del número
@@ -61,6 +62,8 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
     ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-100 shadow-sm'
     : isDesvio
       ? 'bg-red-500 text-white border-red-400 shadow-red-100 shadow-sm'
+      : isNotApplicable
+        ? 'bg-slate-500 text-white border-slate-400 shadow-slate-100 shadow-sm'
       : 'bg-slate-100 text-slate-400 border-slate-200';
 
   // Borde izquierdo de la fila
@@ -68,6 +71,8 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
     ? 'bg-emerald-50/40 border-l-2 border-l-emerald-400'
     : isDesvio
       ? 'bg-red-50/40 border-l-2 border-l-red-400'
+      : isNotApplicable
+        ? 'bg-slate-50 border-l-2 border-l-slate-400'
       : 'border-l-2 border-l-transparent';
 
   return (
@@ -82,7 +87,7 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
           <div className="flex items-start gap-3 sm:items-center sm:gap-4 min-w-0 flex-1">
             {/* Número / estado */}
             <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[10px] font-black transition-all duration-200 ${numBg}`}>
-              {isOk ? <Check size={13} strokeWidth={3.5} /> : isDesvio ? <X size={13} strokeWidth={3.5} /> : item.id}
+              {isOk ? <Check size={13} strokeWidth={3.5} /> : isDesvio ? <X size={13} strokeWidth={3.5} /> : isNotApplicable ? <Minus size={15} strokeWidth={3.5} /> : item.id}
             </div>
 
             {/* Texto central */}
@@ -138,6 +143,19 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
               Desvio
             </button>
 
+            <button
+              onClick={() => handleScoreChange(NOT_APPLICABLE_SCORE)}
+              title="No aplica"
+              className={`audit-btn flex items-center justify-center gap-1 rounded-2xl px-3 py-2.5 text-[12px] font-black uppercase tracking-wide transition-all duration-150 select-none ${
+                isNotApplicable
+                  ? 'bg-slate-600 text-white shadow-lg shadow-slate-200 scale-105'
+                  : 'bg-white text-slate-600 border-2 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+              }`}
+            >
+              <Minus size={13} strokeWidth={3} />
+              N/A
+            </button>
+
             {/* Nota */}
             <button
               onClick={() => setShowDetails((prev) => !prev)}
@@ -161,7 +179,7 @@ export const AuditRow: React.FC<Props> = ({ item, score, detail, uploadContext, 
         </div>
 
         {/* Selector de roles (solo si tiene múltiples y ya respondió) */}
-        {hasMultiRole && !isPending && (
+        {hasMultiRole && !isPending && !isNotApplicable && (
           <div className="mt-3 ml-11">
             <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-100 bg-amber-50/60 px-4 py-2.5">
               <span className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-600 shrink-0">
