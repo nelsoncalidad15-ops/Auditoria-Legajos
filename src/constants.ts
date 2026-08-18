@@ -1,4 +1,6 @@
-import { AuditItem, AuditItemDetail } from './types';
+import { AuditItem, AuditItemDetail, AuditScore } from './types';
+
+export const NOT_APPLICABLE_SCORE: AuditScore = -1;
 
 export const AUDIT_ITEMS: AuditItem[] = [
   {
@@ -127,7 +129,7 @@ const normalizeRole = (role: string) => role.trim().toLowerCase();
 
 export const getAffectedRolesForScore = (
   item: AuditItem,
-  score: number | undefined,
+  score: AuditScore | undefined,
   detail?: AuditItemDetail,
 ) => {
   if (score === undefined) {
@@ -142,14 +144,14 @@ export const getAffectedRolesForScore = (
 };
 
 export const calculateSummary = (
-  scores: Record<number, number>,
+  scores: Record<number, AuditScore>,
   items: AuditItem[],
   itemDetails: Record<number, AuditItemDetail> = {},
 ) => {
   const getAverage = (roleFilter?: string) => {
     const answeredScores = items.flatMap((item) => {
       const score = scores[item.id];
-      if (score === undefined) return [];
+      if (score === undefined || score === NOT_APPLICABLE_SCORE) return [];
 
       if (!roleFilter) {
         return [score];
@@ -176,3 +178,22 @@ export const calculateSummary = (
     total: getAverage()
   };
 };
+
+export const hasApplicableScores = (
+  scores: Record<number, AuditScore>,
+  items: AuditItem[],
+  itemDetails: Record<number, AuditItemDetail> = {},
+  roleFilter?: string,
+) => items.some((item) => {
+  const score = scores[item.id];
+  if (score === undefined || score === NOT_APPLICABLE_SCORE) return false;
+
+  if (!roleFilter) return true;
+
+  const itemHasRole = item.roles.some((role) => normalizeRole(role) === normalizeRole(roleFilter));
+  if (!itemHasRole) return false;
+
+  return getAffectedRolesForScore(item, score, itemDetails[item.id]).some(
+    (role) => normalizeRole(role) === normalizeRole(roleFilter),
+  );
+});

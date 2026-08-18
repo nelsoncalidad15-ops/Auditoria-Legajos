@@ -8,6 +8,7 @@ export interface AuditItem {
 
 export type BranchName = 'Jujuy' | 'Salta';
 export type LegajoStatus = 'pendiente' | 'en_proceso' | 'finalizado';
+export type AuditScore = 0 | 1 | -1;
 
 export interface DriveEvidenceAsset {
   kind: 'drive';
@@ -36,7 +37,7 @@ export interface LegajoRecord {
   createdAt: number;
   updatedAt: number;
   finalizedAt?: number;
-  scores: Record<number, number>;
+  scores: Record<number, AuditScore>;
   itemDetails: Record<number, AuditItemDetail>;
   evidencias: EvidenceAsset[];
   observaciones: string;
@@ -65,7 +66,7 @@ export interface AuditData {
   legajoNombre: string;
   legajoVendedor?: string;
   legajoEstado?: 'pendiente' | 'en_proceso' | 'finalizado';
-  scores: Record<number, number>; // itemId: score (0 or 1)
+  scores: Record<number, AuditScore>; // itemId: 0 = desvío, 1 = OK, -1 = N/A
   itemDetails: Record<number, AuditItemDetail>;
   evidencias: EvidenceAsset[];
   observaciones: string;

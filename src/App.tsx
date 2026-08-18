@@ -28,8 +28,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { useHashRouter } from './hooks/useHashRouter';
-import { AUDIT_ITEMS, calculateSummary, getAffectedRolesForScore } from './constants';
-import { AuditData, AuditItem, AuditItemDetail, AuditSession, BranchName, LegajoRecord, LegajoStatus } from './types';
+import { AUDIT_ITEMS, calculateSummary, getAffectedRolesForScore, hasApplicableScores, NOT_APPLICABLE_SCORE } from './constants';
+import { AuditData, AuditItem, AuditItemDetail, AuditScore, AuditSession, BranchName, LegajoRecord, LegajoStatus } from './types';
 import { AuditRow } from './components/AuditRow';
 import { SummaryChart } from './components/SummaryChart';
 import { getEvidenceOpenUrl, getEvidencePdfSources, getEvidencePreviewSrc, isDriveEvidence } from './utils/evidence';
@@ -487,6 +487,11 @@ export default function App() {
       ...legajo,
       summary: calculateSummary(legajo.scores, items, legajo.itemDetails),
       answered: items.filter((item) => legajo.scores[item.id] !== undefined).length,
+      notApplicable: items.filter((item) => legajo.scores[item.id] === NOT_APPLICABLE_SCORE).length,
+      scored: items.filter((item) => {
+        const score = legajo.scores[item.id];
+        return score !== undefined && score !== NOT_APPLICABLE_SCORE;
+      }).length,
       desvioItems: items.filter((item) => legajo.scores[item.id] === 0),
       commentedItems: (Object.values(legajo.itemDetails) as AuditItemDetail[]).filter((detail) => detail.comentario.trim() || detail.evidencias.length > 0).length,
     }));
@@ -501,21 +506,18 @@ export default function App() {
       return { total: 0, admin: 0, preEntrega: 0, ventas: 0 };
     }
 
-    const totals = source.reduce(
-      (acc, legajo) => ({
-        total: acc.total + legajo.summary.total,
-        admin: acc.admin + legajo.summary.admin,
-        preEntrega: acc.preEntrega + legajo.summary.preEntrega,
-        ventas: acc.ventas + legajo.summary.ventas,
-      }),
-      { total: 0, admin: 0, preEntrega: 0, ventas: 0 },
-    );
+    const getAverage = (summaryKey: keyof typeof source[number]['summary'], role?: string) => {
+      const applicableLegajos = source.filter((legajo) => hasApplicableScores(legajo.scores, items, legajo.itemDetails, role));
+      return applicableLegajos.length
+        ? applicableLegajos.reduce((total, legajo) => total + legajo.summary[summaryKey], 0) / applicableLegajos.length
+        : 0;
+    };
 
     return {
-      total: totals.total / source.length,
-      admin: totals.admin / source.length,
-      preEntrega: totals.preEntrega / source.length,
-      ventas: totals.ventas / source.length,
+      total: getAverage('total'),
+      admin: getAverage('admin', 'Admin'),
+      preEntrega: getAverage('preEntrega', 'Pre-Entrega'),
+      ventas: getAverage('ventas', 'Ventas'),
     };
   }, [sessionLegajosWithSummary]);
 
@@ -593,16 +595,18 @@ export default function App() {
             .map((legajo) => ({
               nombre: legajo.nombre,
               total: calculateSummary(legajo.scores, items, legajo.itemDetails).total,
+              hasApplicableScores: hasApplicableScores(legajo.scores, items, legajo.itemDetails),
               updatedAt: legajo.updatedAt,
             })),
         )
         .sort((a, b) => b.updatedAt - a.updatedAt);
 
-      const total = finalizados.reduce((acc, legajo) => acc + legajo.total, 0);
+      const legajosWithScore = finalizados.filter((legajo) => legajo.hasApplicableScores);
+      const total = legajosWithScore.reduce((acc, legajo) => acc + legajo.total, 0);
 
       stats[branch] = {
         count: finalizados.length,
-        average: finalizados.length ? total / finalizados.length : 0,
+        average: legajosWithScore.length ? total / legajosWithScore.length : 0,
         latest: finalizados[0]?.nombre || '',
       };
     }
@@ -616,8 +620,9 @@ export default function App() {
     const finalizados = featuredSession.legajos.filter((legajo) => legajo.status === 'finalizado').length;
     const enProceso = featuredSession.legajos.filter((legajo) => legajo.status === 'en_proceso').length;
     const total = featuredSession.legajos.length;
-    const average = total > 0
-      ? featuredSession.legajos.reduce((acc, legajo) => acc + calculateSummary(legajo.scores, items, legajo.itemDetails).total, 0) / total
+    const legajosWithScore = featuredSession.legajos.filter((legajo) => hasApplicableScores(legajo.scores, items, legajo.itemDetails));
+    const average = legajosWithScore.length > 0
+      ? legajosWithScore.reduce((acc, legajo) => acc + calculateSummary(legajo.scores, items, legajo.itemDetails).total, 0) / legajosWithScore.length
       : 0;
 
     return {
@@ -926,7 +931,7 @@ export default function App() {
     const completionRate = selectedSession.objetivo > 0
       ? Math.min((finalizedCount / selectedSession.objetivo) * 100, 100)
       : 0;
-    const activeLegajos = sessionLegajosWithSummary.filter((legajo) => legajo.answered > 0);
+    const activeLegajos = sessionLegajosWithSummary.filter((legajo) => legajo.scored > 0);
     const bestLegajo = [...activeLegajos].sort((a, b) => b.summary.total - a.summary.total)[0];
     const attentionLegajo = [...activeLegajos].sort((a, b) => a.summary.total - b.summary.total)[0];
     const totalDesvios = sessionLegajosWithSummary.reduce((acc, legajo) => acc + legajo.desvioItems.length, 0);
@@ -1238,7 +1243,7 @@ export default function App() {
       doc.setTextColor(...palette.text);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
-      doc.text('Lectura rapida: SI = cumple, NO = desvio, - = sin responder.', 14, matrixStartY + 8);
+      doc.text('Lectura rapida: SI = cumple, NO = desvio, N/A = no aplica, - = sin responder.', 14, matrixStartY + 8);
       doc.text(doc.splitTextToSize(matrixLegend, pageWidth - 28), 14, matrixStartY + 15);
 
       const matrixHead = ['Legajo', ...items.map((item) => `${item.id}`)];
@@ -1248,6 +1253,7 @@ export default function App() {
           const score = legajo.scores[item.id];
           if (score === 1) return 'SI';
           if (score === 0) return 'NO';
+          if (score === NOT_APPLICABLE_SCORE) return 'N/A';
           return '-';
         }),
       ]);
@@ -2211,6 +2217,12 @@ export default function App() {
                           {Object.values(selectedLegajo.scores).filter((s) => s === 0).length} Desv.
                         </span>
                       </div>
+                      <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <span className="text-slate-500">N/A</span>
+                        <span className="text-[12px] font-black text-slate-600">
+                          {Object.values(selectedLegajo.scores).filter((s) => s === NOT_APPLICABLE_SCORE).length}
+                        </span>
+                      </div>
                       <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2">
                         <span className="text-[12px] font-black text-slate-600">
                           {currentProgress.answered}/{currentProgress.total}
@@ -2260,8 +2272,8 @@ export default function App() {
                           itemId: item.id,
                           itemRequisito: item.requisito,
                         }}
-                        onChange={(score) => {
-                          const shouldAutoAdvance = score === 1 && item.roles.length <= 1;
+                        onChange={(score: AuditScore) => {
+                          const shouldAutoAdvance = (score === 1 || score === NOT_APPLICABLE_SCORE) && item.roles.length <= 1;
 
                           updateLegajo(selectedLegajo.id, (legajo) => {
                             const currentDetail = legajo.itemDetails[item.id] ?? createEmptyItemDetail();
