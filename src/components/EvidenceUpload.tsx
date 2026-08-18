@@ -47,6 +47,28 @@ export const EvidenceUpload: React.FC<Props> = ({ evidencias, onChange, uploadCo
     e.target.value = '';
   };
 
+  const handlePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const imageFiles = (Array.from(e.clipboardData.files) as File[]).filter((file) => file.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+
+    e.preventDefault();
+    setIsUploading(true);
+    setUploadError('');
+
+    try {
+      const uploadedImages: EvidenceAsset[] = [];
+      for (const file of imageFiles) {
+        uploadedImages.push(await uploadEvidence(file, uploadContext));
+      }
+      onChange([...evidencias, ...uploadedImages]);
+    } catch (error) {
+      console.error('Error pasting evidence:', error);
+      setUploadError('No se pudo pegar la evidencia. Intenta nuevamente.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const removeImage = (index: number) => {
     const shouldRemove = window.confirm('¿Querés quitar esta evidencia del legajo?');
     if (!shouldRemove) return;
@@ -54,7 +76,7 @@ export const EvidenceUpload: React.FC<Props> = ({ evidencias, onChange, uploadCo
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" onPaste={handlePaste}>
       <div className={`grid gap-3 ${compact ? 'grid-cols-3 sm:grid-cols-4' : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6'}`}>
         {evidencias.map((src, index) => (
           <div key={index} className="relative aspect-square rounded-2xl overflow-hidden group border border-white/60 shadow-sm transition-transform hover:scale-105">
@@ -118,6 +140,17 @@ export const EvidenceUpload: React.FC<Props> = ({ evidencias, onChange, uploadCo
         >
           {isUploading ? <LoaderCircle size={24} className="animate-spin" strokeWidth={1.5} /> : <ImageIcon size={24} strokeWidth={1.5} />}
           <span className="text-[9px] font-black uppercase tracking-tighter">Galeria</span>
+        </button>
+
+        <button
+          type="button"
+          disabled={isUploading}
+          title="Hacé clic acá y presioná Ctrl + V para adjuntar una captura"
+          className={`aspect-square rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/50 flex flex-col items-center justify-center gap-1 text-indigo-500 hover:border-indigo-400 hover:bg-indigo-50 transition-all cursor-pointer ${compact ? 'min-h-20' : ''}`}
+        >
+          <ImageIcon size={24} strokeWidth={1.5} />
+          <span className="text-[9px] font-black uppercase tracking-tighter">Pegar captura</span>
+          <span className="text-[8px] font-bold text-indigo-400">Ctrl + V</span>
         </button>
       </div>
 
